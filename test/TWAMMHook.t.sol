@@ -70,10 +70,11 @@ contract TWAMMHookTest is Test {
     address public bob = address(0x2);
 
     // Hook needs specific address flags:
+    // beforeSwap: bit 7 (0x80)
     // afterInitialize: bit 12 (0x1000)
     // afterSwap: bit 6 (0x40)
-    // Required mask: 0x1040
-    address constant HOOK_ADDRESS = address(0x0000000000000000000000000000000000001040);
+    // Required mask: 0x10C0
+    address constant HOOK_ADDRESS = address(0x00000000000000000000000000000000000010C0);
 
     function setUp() public {
         // Deploy mock pool manager

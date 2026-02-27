@@ -18,11 +18,12 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
  * @dev Enables large trades to be executed over time to minimize slippage
  * 
  * Hook Address Requirements:
+ * - beforeSwap: bit 7 (1 << 7 = 0x80)
  * - afterInitialize: bit 12 (1 << 12 = 0x1000)
  * - afterSwap: bit 6 (1 << 6 = 0x40)
  * 
- * Required address mask: 0x1040
- * Example valid address: 0x...0000000000001040
+ * Required address mask: 0x10C0
+ * Example valid address: 0x...00000000000010C0
  */
 contract TWAMMHook is IHooks {
     using PoolIdLibrary for PoolKey;
@@ -94,6 +95,7 @@ contract TWAMMHook is IHooks {
         poolManager = _poolManager;
         
         // Validate hook permissions
+        // beforeSwap enabled to track TWAMM-originated swaps
         Hooks.validateHookPermissions(
             this,
             Hooks.Permissions({
@@ -103,7 +105,7 @@ contract TWAMMHook is IHooks {
                 afterAddLiquidity: false,
                 beforeRemoveLiquidity: false,
                 afterRemoveLiquidity: false,
-                beforeSwap: false,
+                beforeSwap: true,
                 afterSwap: true,
                 beforeDonate: false,
                 afterDonate: false,
@@ -119,6 +121,24 @@ contract TWAMMHook is IHooks {
     
     function beforeInitialize(address, PoolKey calldata, uint160) external pure override returns (bytes4) {
         revert HookNotImplemented();
+    }
+
+    // Tracks whether we're currently executing a TWAMM chunk (to prevent recursion)
+    bool internal _isExecutingChunk;
+
+    /// @notice Only processes TWAMM chunks on external swaps (not TWAMM-initiated ones)
+    function beforeSwap(
+        address sender,
+        PoolKey calldata key,
+        IPoolManager.SwapParams calldata params,
+        bytes calldata hookData
+    ) external view override returns (bytes4, BeforeSwapDelta, uint24) {
+        if (msg.sender != address(poolManager)) revert TWAMMHook__OnlyPoolManager();
+        
+        // If this is a TWAMM-initiated swap (from _executeChunk), just pass through
+        // If it's an external swap and we have TWAMM orders to execute, process them in afterSwap
+        
+        return (IHooks.beforeSwap.selector, BeforeSwapDelta.wrap(0), 0);
     }
 
     function afterInitialize(
@@ -178,15 +198,6 @@ contract TWAMMHook is IHooks {
         revert HookNotImplemented();
     }
 
-    function beforeSwap(
-        address,
-        PoolKey calldata,
-        IPoolManager.SwapParams calldata,
-        bytes calldata
-    ) external pure override returns (bytes4, BeforeSwapDelta, uint24) {
-        revert HookNotImplemented();
-    }
-
     function afterSwap(
         address,
         PoolKey calldata key,
@@ -196,8 +207,9 @@ contract TWAMMHook is IHooks {
     ) external override returns (bytes4, int128) {
         if (msg.sender != address(poolManager)) revert TWAMMHook__OnlyPoolManager();
         
-        // After every swap, check if there are pending TWAMM chunks to execute
-        if (twammEnabled[key.toId()]) {
+        // Skip processing if we're in the middle of executing a TWAMM chunk
+        // to prevent infinite recursion
+        if (!_isExecutingChunk && twammEnabled[key.toId()]) {
             _processPendingOrders(key);
         }
         return (IHooks.afterSwap.selector, 0);
@@ -362,6 +374,15 @@ contract TWAMMHook is IHooks {
         }
     }
 
+    // TWAMM execution context for unlock callback
+    struct ChunkExecution {
+        PoolKey key;
+        bytes32 orderId;
+        uint256 chunkAmount;
+        bool zeroForOne;
+    }
+    ChunkExecution internal _currentExecution;
+
     function _executeChunk(PoolKey calldata key, bytes32 orderId) internal {
         TWAMMOrder storage order = orders[orderId];
         
@@ -371,19 +392,68 @@ contract TWAMMHook is IHooks {
 
         if (chunkAmount == 0) revert TWAMMHook__NoChunksToExecute();
 
-        // Note: In a complete implementation, this would trigger an actual swap
-        // through the PoolManager. For this scaffold, we're tracking execution.
+        _isExecutingChunk = true;
+
+        // Store execution context for unlock callback
+        bool zeroForOne = order.tokenIn == key.currency0;
+        _currentExecution = ChunkExecution({
+            key: key,
+            orderId: orderId,
+            chunkAmount: chunkAmount,
+            zeroForOne: zeroForOne
+        });
+
+        // Prepare swap parameters and execute via unlock
+        IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: -int256(chunkAmount), // Exact input
+            sqrtPriceLimitX96: zeroForOne ? 4295128740 : 340282366920938463463374607431768211455
+        });
+
+        bytes memory result = poolManager.unlock(abi.encode(1, key, params, orderId));
+        (BalanceDelta delta) = abi.decode(result, (BalanceDelta));
+
+        // Calculate amount out from delta
+        int128 amountOut = zeroForOne ? delta.amount1() : delta.amount0();
         
         order.executedChunks++;
         order.executedAmount += chunkAmount;
         order.lastExecutionTime = block.timestamp;
 
-        emit ChunkExecuted(orderId, order.executedChunks - 1, chunkAmount, 0);
+        emit ChunkExecuted(orderId, order.executedChunks - 1, chunkAmount, uint128(amountOut));
+
+        _isExecutingChunk = false;
+        delete _currentExecution;
 
         // Check if order is complete
         if (order.executedChunks >= order.totalChunks) {
             order.active = false;
             emit OrderCompleted(orderId);
         }
+    }
+
+    /// @notice Callback from PoolManager.unlock() to execute swap
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        if (msg.sender != address(poolManager)) revert TWAMMHook__OnlyPoolManager();
+
+        (uint256 op, PoolKey memory key, IPoolManager.SwapParams memory params, bytes32 orderId) = 
+            abi.decode(data, (uint256, PoolKey, IPoolManager.SwapParams, bytes32));
+
+        require(op == 1, "Invalid operation");
+
+        // Pull tokens from hook into PoolManager
+        require(IERC20(Currency.unwrap(_currentExecution.zeroForOne ? key.currency0 : key.currency1))
+            .transfer(address(poolManager), uint256(-params.amountSpecified)), "Transfer failed");
+
+        // Execute the actual swap
+        BalanceDelta delta = poolManager.swap(key, params, abi.encode(orderId));
+
+        // Take the output tokens from the pool
+        Currency outputCurrency = _currentExecution.zeroForOne ? key.currency1 : key.currency0;
+        int128 outputAmount = _currentExecution.zeroForOne ? delta.amount1() : delta.amount0();
+        require(outputAmount > 0, "Invalid output amount");
+        poolManager.take(outputCurrency, address(this), uint256(uint128(outputAmount)));
+
+        return abi.encode(delta);
     }
 }
