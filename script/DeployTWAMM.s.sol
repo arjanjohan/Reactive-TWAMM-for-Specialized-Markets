@@ -25,8 +25,8 @@ contract DeployTWAMM is Script {
 
     // Unichain Sepolia Testnet v4 Contracts
     // Source: https://docs.uniswap.org/contracts/v4/deployments
-    address constant POOL_MANAGER_SEPOLIA = 0x00b036b58a818b1bc34d502d3fe730db729e62ac;
-    address constant UNIVERSAL_ROUTER_SEPOLIA = 0xf70536b3bcc1bd1a972dc186a2cf84cc6da6be5d;
+    address constant POOL_MANAGER_SEPOLIA = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
+    address constant UNIVERSAL_ROUTER_SEPOLIA = 0xf70536B3bcC1bD1a972dc186A2cf84cC6da6Be5D;
     address constant PERMIT2_SEPOLIA = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     
     // TODO: Update with actual Reactive callback address when available
