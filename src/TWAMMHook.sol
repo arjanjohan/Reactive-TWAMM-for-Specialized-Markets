@@ -11,21 +11,22 @@ import {Currency} from "@uniswap/v4-core/types/Currency.sol";
 import {SafeCast} from "@uniswap/v4-core/libraries/SafeCast.sol";
 import {BeforeSwapDelta} from "@uniswap/v4-core/types/BeforeSwapDelta.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ITWAMMHook} from "./interfaces/ITWAMMHook.sol";
 
 /**
  * @title TWAMMHook
  * @notice Time-Weighted AMM Hook for Uniswap v4
  * @dev Enables large trades to be executed over time to minimize slippage
- * 
+ *
  * Hook Address Requirements:
  * - beforeSwap: bit 7 (1 << 7 = 0x80)
  * - afterInitialize: bit 12 (1 << 12 = 0x1000)
  * - afterSwap: bit 6 (1 << 6 = 0x40)
- * 
+ *
  * Required address mask: 0x10C0
  * Example valid address: 0x...00000000000010C0
  */
-contract TWAMMHook is IHooks {
+contract TWAMMHook is IHooks, ITWAMMHook {
     using PoolIdLibrary for PoolKey;
     using SafeCast for uint256;
     using Hooks for IHooks;
@@ -43,28 +44,14 @@ contract TWAMMHook is IHooks {
     error TWAMMHook__OnlyPoolManager();
     error HookNotImplemented();
 
-    // ============ Structs ============
-    struct TWAMMOrder {
-        address owner;
-        Currency tokenIn;
-        Currency tokenOut;
-        uint256 totalAmount;
-        uint256 executedAmount;
-        uint256 totalChunks;
-        uint256 executedChunks;
-        uint256 startTime;
-        uint256 endTime;
-        uint256 lastExecutionTime;
-        bool active;
-        bool cancelled;
-    }
+    // Structs defined in ITWAMMHook interface
 
-    // ============ State ============
-    IPoolManager public immutable poolManager;
-    mapping(bytes32 => TWAMMOrder) public orders;
+    // State variables
+    IPoolManager public immutable POOL_MANAGER;
+    mapping(bytes32 => ITWAMMHook.TWAMMOrder) public orders;
     mapping(PoolId => bool) public twammEnabled;
     mapping(PoolId => bytes32[]) public poolOrders;
-    
+
     uint256 public constant MIN_CHUNK_DURATION = 1 minutes;
     uint256 public constant MAX_CHUNKS = 100;
     uint256 public orderCounter;
@@ -78,22 +65,22 @@ contract TWAMMHook is IHooks {
         uint256 totalChunks,
         uint256 endTime
     );
-    
+
     event ChunkExecuted(
         bytes32 indexed orderId,
         uint256 chunkIndex,
         uint256 amountIn,
         uint256 amountOut
     );
-    
+
     event OrderCompleted(bytes32 indexed orderId);
     event OrderCancelled(bytes32 indexed orderId);
     event TWAMMEnabled(PoolId indexed poolId);
 
     // ============ Constructor ============
-    constructor(IPoolManager _poolManager) {
-        poolManager = _poolManager;
-        
+    constructor(IPoolManager _POOL_MANAGER) {
+        POOL_MANAGER = _POOL_MANAGER;
+
         // Validate hook permissions
         // beforeSwap enabled to track TWAMM-originated swaps
         Hooks.validateHookPermissions(
@@ -117,8 +104,13 @@ contract TWAMMHook is IHooks {
         );
     }
 
+    /// @notice Returns the PoolManager address (interface compatibility)
+    function poolManager() external view override returns (address) {
+        return address(POOL_MANAGER);
+    }
+
     // ============ Hook Functions ============
-    
+
     function beforeInitialize(address, PoolKey calldata, uint160) external pure override returns (bytes4) {
         revert HookNotImplemented();
     }
@@ -133,11 +125,11 @@ contract TWAMMHook is IHooks {
         IPoolManager.SwapParams calldata params,
         bytes calldata hookData
     ) external view override returns (bytes4, BeforeSwapDelta, uint24) {
-        if (msg.sender != address(poolManager)) revert TWAMMHook__OnlyPoolManager();
-        
+        if (msg.sender != address(POOL_MANAGER)) revert TWAMMHook__OnlyPoolManager();
+
         // If this is a TWAMM-initiated swap (from _executeChunk), just pass through
         // If it's an external swap and we have TWAMM orders to execute, process them in afterSwap
-        
+
         return (IHooks.beforeSwap.selector, BeforeSwapDelta.wrap(0), 0);
     }
 
@@ -147,14 +139,14 @@ contract TWAMMHook is IHooks {
         uint160,
         int24
     ) external override returns (bytes4) {
-        if (msg.sender != address(poolManager)) revert TWAMMHook__OnlyPoolManager();
-        
+        if (msg.sender != address(POOL_MANAGER)) revert TWAMMHook__OnlyPoolManager();
+
         // For this scaffold, we'll enable TWAMM for all pools that use this hook
         // In production, you'd use hookData to decide
         PoolId poolId = key.toId();
         twammEnabled[poolId] = true;
         emit TWAMMEnabled(poolId);
-        
+
         return IHooks.afterInitialize.selector;
     }
 
@@ -205,8 +197,8 @@ contract TWAMMHook is IHooks {
         BalanceDelta,
         bytes calldata
     ) external override returns (bytes4, int128) {
-        if (msg.sender != address(poolManager)) revert TWAMMHook__OnlyPoolManager();
-        
+        if (msg.sender != address(POOL_MANAGER)) revert TWAMMHook__OnlyPoolManager();
+
         // Skip processing if we're in the middle of executing a TWAMM chunk
         // to prevent infinite recursion
         if (!_isExecutingChunk && twammEnabled[key.toId()]) {
@@ -236,7 +228,7 @@ contract TWAMMHook is IHooks {
     }
 
     // ============ External Functions ============
-    
+
     /**
      * @notice Submit a new TWAMM order
      * @param key The pool key
@@ -254,7 +246,7 @@ contract TWAMMHook is IHooks {
     ) external returns (bytes32 orderId) {
         if (amount == 0) revert TWAMMHook__InvalidAmount();
         if (duration < MIN_CHUNK_DURATION) revert TWAMMHook__InvalidDuration();
-        
+
         PoolId poolId = key.toId();
         if (!twammEnabled[poolId]) revert TWAMMHook__TWAMMNotEnabled();
 
@@ -264,7 +256,7 @@ contract TWAMMHook is IHooks {
         if (numChunks == 0) numChunks = 1;
 
         orderId = keccak256(abi.encodePacked(msg.sender, block.timestamp, orderCounter++));
-        
+
         orders[orderId] = TWAMMOrder({
             owner: msg.sender,
             tokenIn: tokenIn,
@@ -293,8 +285,8 @@ contract TWAMMHook is IHooks {
      * @param orderId The order ID to cancel
      */
     function cancelTWAMMOrder(bytes32 orderId) external {
-        TWAMMOrder storage order = orders[orderId];
-        
+        ITWAMMHook.TWAMMOrder storage order = orders[orderId];
+
         if (order.owner == address(0)) revert TWAMMHook__OrderNotFound();
         if (order.owner != msg.sender) revert TWAMMHook__NotOrderOwner();
         if (!order.active) revert TWAMMHook__OrderAlreadyCompleted();
@@ -318,8 +310,8 @@ contract TWAMMHook is IHooks {
      * @param orderId The order ID to execute
      */
     function executeTWAMMChunk(PoolKey calldata key, bytes32 orderId) external {
-        TWAMMOrder storage order = orders[orderId];
-        
+        ITWAMMHook.TWAMMOrder storage order = orders[orderId];
+
         if (order.owner == address(0)) revert TWAMMHook__OrderNotFound();
         if (!order.active) revert TWAMMHook__OrderAlreadyCompleted();
         if (order.cancelled) revert TWAMMHook__OrderCancelled();
@@ -328,7 +320,7 @@ contract TWAMMHook is IHooks {
         // Check if enough time has passed since last execution
         uint256 timeSinceLastExecution = block.timestamp - order.lastExecutionTime;
         uint256 chunkDuration = (order.endTime - order.startTime) / order.totalChunks;
-        
+
         if (timeSinceLastExecution < chunkDuration && order.lastExecutionTime != 0) {
             revert TWAMMHook__ExecutionTooSoon();
         }
@@ -337,8 +329,8 @@ contract TWAMMHook is IHooks {
     }
 
     // ============ View Functions ============
-    
-    function getOrder(bytes32 orderId) external view returns (TWAMMOrder memory) {
+
+    function getOrder(bytes32 orderId) external view returns (ITWAMMHook.TWAMMOrder memory) {
         return orders[orderId];
     }
 
@@ -347,27 +339,27 @@ contract TWAMMHook is IHooks {
     }
 
     function getOrderProgress(bytes32 orderId) external view returns (uint256 executed, uint256 total) {
-        TWAMMOrder storage order = orders[orderId];
+        ITWAMMHook.TWAMMOrder storage order = orders[orderId];
         return (order.executedChunks, order.totalChunks);
     }
 
     // ============ Internal Functions ============
-    
+
     function _processPendingOrders(PoolKey calldata key) internal {
         PoolId poolId = key.toId();
         bytes32[] storage ordersList = poolOrders[poolId];
-        
+
         for (uint256 i = 0; i < ordersList.length; i++) {
             bytes32 orderId = ordersList[i];
-            TWAMMOrder storage order = orders[orderId];
-            
+            ITWAMMHook.TWAMMOrder storage order = orders[orderId];
+
             if (!order.active || order.cancelled) continue;
             if (order.executedChunks >= order.totalChunks) continue;
-            
+
             // Check if it's time to execute next chunk
             uint256 timeSinceLastExecution = block.timestamp - order.lastExecutionTime;
             uint256 chunkDuration = (order.endTime - order.startTime) / order.totalChunks;
-            
+
             if (timeSinceLastExecution >= chunkDuration || order.lastExecutionTime == 0) {
                 _executeChunk(key, orderId);
             }
@@ -384,8 +376,8 @@ contract TWAMMHook is IHooks {
     ChunkExecution internal _currentExecution;
 
     function _executeChunk(PoolKey calldata key, bytes32 orderId) internal {
-        TWAMMOrder storage order = orders[orderId];
-        
+        ITWAMMHook.TWAMMOrder storage order = orders[orderId];
+
         uint256 remainingChunks = order.totalChunks - order.executedChunks;
         uint256 remainingAmount = order.totalAmount - order.executedAmount;
         uint256 chunkAmount = remainingAmount / remainingChunks;
@@ -410,12 +402,12 @@ contract TWAMMHook is IHooks {
             sqrtPriceLimitX96: zeroForOne ? 4295128740 : 340282366920938463463374607431768211455
         });
 
-        bytes memory result = poolManager.unlock(abi.encode(1, key, params, orderId));
+        bytes memory result = POOL_MANAGER.unlock(abi.encode(1, key, params, orderId));
         (BalanceDelta delta) = abi.decode(result, (BalanceDelta));
 
         // Calculate amount out from delta
         int128 amountOut = zeroForOne ? delta.amount1() : delta.amount0();
-        
+
         order.executedChunks++;
         order.executedAmount += chunkAmount;
         order.lastExecutionTime = block.timestamp;
@@ -434,25 +426,25 @@ contract TWAMMHook is IHooks {
 
     /// @notice Callback from PoolManager.unlock() to execute swap
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
-        if (msg.sender != address(poolManager)) revert TWAMMHook__OnlyPoolManager();
+        if (msg.sender != address(POOL_MANAGER)) revert TWAMMHook__OnlyPoolManager();
 
-        (uint256 op, PoolKey memory key, IPoolManager.SwapParams memory params, bytes32 orderId) = 
+        (uint256 op, PoolKey memory key, IPoolManager.SwapParams memory params, bytes32 orderId) =
             abi.decode(data, (uint256, PoolKey, IPoolManager.SwapParams, bytes32));
 
         require(op == 1, "Invalid operation");
 
         // Pull tokens from hook into PoolManager
         require(IERC20(Currency.unwrap(_currentExecution.zeroForOne ? key.currency0 : key.currency1))
-            .transfer(address(poolManager), uint256(-params.amountSpecified)), "Transfer failed");
+            .transfer(address(POOL_MANAGER), uint256(-params.amountSpecified)), "Transfer failed");
 
         // Execute the actual swap
-        BalanceDelta delta = poolManager.swap(key, params, abi.encode(orderId));
+        BalanceDelta delta = POOL_MANAGER.swap(key, params, abi.encode(orderId));
 
         // Take the output tokens from the pool
         Currency outputCurrency = _currentExecution.zeroForOne ? key.currency1 : key.currency0;
         int128 outputAmount = _currentExecution.zeroForOne ? delta.amount1() : delta.amount0();
         require(outputAmount > 0, "Invalid output amount");
-        poolManager.take(outputCurrency, address(this), uint256(uint128(outputAmount)));
+        POOL_MANAGER.take(outputCurrency, address(this), uint256(uint128(outputAmount)));
 
         return abi.encode(delta);
     }
