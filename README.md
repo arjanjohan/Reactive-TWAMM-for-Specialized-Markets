@@ -14,6 +14,16 @@ Time-weighted automated market maker (TWAMM) hook for Uniswap v4 that uses React
 
 ## 📝 Project Status
 
+## 🚀 Testnet Deployment (Unichain Sepolia)
+
+- **TWAMM Hook:** [`0x781DCD168387b8173C07dafB99BEEff7a8e890c0`](https://sepolia.uniscan.xyz/address/0x781DCD168387b8173C07dafB99BEEff7a8e890c0)
+- **ReactiveTWAMM:** [`0xD33Aa66BFcB29E4CbBC9187F6522E9EC5b173588`](https://sepolia.uniscan.xyz/address/0xD33Aa66BFcB29E4CbBC9187F6522E9EC5b173588)
+- **Reactive callback proxy (docs):** [`0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4`](https://sepolia.uniscan.xyz/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4)
+
+Deployment transactions:
+- Hook deploy tx: [`0x8e47267ecfed286e23e60afa0fe324cac0d23486e70df5fa0a29aeb8fc8f2e12`](https://sepolia.uniscan.xyz/tx/0x8e47267ecfed286e23e60afa0fe324cac0d23486e70df5fa0a29aeb8fc8f2e12)
+- Reactive deploy tx: [`0xfc99ee203126f5185fd942e470352b917278bc526579353bc122f8f0eec39e3f`](https://sepolia.uniscan.xyz/tx/0xfc99ee203126f5185fd942e470352b917278bc526579353bc122f8f0eec39e3f)
+
 | Milestone | Status | Date |
 |-----------|--------|------|
 | ✅ Foundry Setup | Complete | Feb 27 |
