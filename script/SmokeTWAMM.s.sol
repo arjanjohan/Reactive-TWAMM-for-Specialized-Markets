@@ -12,7 +12,7 @@ import {TestToken} from "../src/TestToken.sol";
 
 contract SmokeTWAMM is Script {
     address constant POOL_MANAGER = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
-    address constant TWAMM_HOOK = 0x781DCD168387b8173C07dafB99BEEff7a8e890c0;
+    address constant TWAMM_HOOK = 0x0E7849e4034146B37bb590c7E81D8BFAAAc210C0;
 
     uint24 constant FEE = 3000;
     int24 constant TICK_SPACING = 60;

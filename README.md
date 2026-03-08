@@ -16,13 +16,13 @@ Time-weighted automated market maker (TWAMM) hook for Uniswap v4 that uses React
 
 ## 🚀 Testnet Deployment (Unichain Sepolia)
 
-- **TWAMM Hook:** [`0x781DCD168387b8173C07dafB99BEEff7a8e890c0`](https://sepolia.uniscan.xyz/address/0x781DCD168387b8173C07dafB99BEEff7a8e890c0)
-- **ReactiveTWAMM:** [`0xD33Aa66BFcB29E4CbBC9187F6522E9EC5b173588`](https://sepolia.uniscan.xyz/address/0xD33Aa66BFcB29E4CbBC9187F6522E9EC5b173588)
+- **TWAMM Hook:** [`0x0E7849e4034146B37bb590c7E81D8BFAAAc210C0`](https://sepolia.uniscan.xyz/address/0x0E7849e4034146B37bb590c7E81D8BFAAAc210C0)
+- **ReactiveTWAMM:** [`0x62329f582D5865fb1459a9ba7384F9cdE55aF331`](https://sepolia.uniscan.xyz/address/0x62329f582D5865fb1459a9ba7384F9cdE55aF331)
 - **Reactive callback proxy (docs):** [`0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4`](https://sepolia.uniscan.xyz/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4)
 
 Deployment transactions:
-- Hook deploy tx: [`0x8e47267ecfed286e23e60afa0fe324cac0d23486e70df5fa0a29aeb8fc8f2e12`](https://sepolia.uniscan.xyz/tx/0x8e47267ecfed286e23e60afa0fe324cac0d23486e70df5fa0a29aeb8fc8f2e12)
-- Reactive deploy tx: [`0xfc99ee203126f5185fd942e470352b917278bc526579353bc122f8f0eec39e3f`](https://sepolia.uniscan.xyz/tx/0xfc99ee203126f5185fd942e470352b917278bc526579353bc122f8f0eec39e3f)
+- Hook deploy tx: [`0x1f31c19fcc2bfe5302ff4c4af14a8388a74c43a3d6cb8c85576d8cc8145ac0d6`](https://sepolia.uniscan.xyz/tx/0x1f31c19fcc2bfe5302ff4c4af14a8388a74c43a3d6cb8c85576d8cc8145ac0d6)
+- Reactive deploy tx: [`0x463d0372e952eebf96e3103095130be596c0a5c76081608e96dc4edf113f46a0`](https://sepolia.uniscan.xyz/tx/0x463d0372e952eebf96e3103095130be596c0a5c76081608e96dc4edf113f46a0)
 
 | Milestone | Status | Date |
 |-----------|--------|------|

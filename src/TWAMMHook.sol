@@ -433,9 +433,14 @@ contract TWAMMHook is IHooks, ITWAMMHook {
 
         require(op == 1, "Invalid operation");
 
-        // Pull tokens from hook into PoolManager
-        require(IERC20(Currency.unwrap(_currentExecution.zeroForOne ? key.currency0 : key.currency1))
-            .transfer(address(POOL_MANAGER), uint256(-params.amountSpecified)), "Transfer failed");
+        // Settle input tokens into PoolManager (required in unlock flow)
+        Currency inputCurrency = _currentExecution.zeroForOne ? key.currency0 : key.currency1;
+        POOL_MANAGER.sync(inputCurrency);
+        require(
+            IERC20(Currency.unwrap(inputCurrency)).transfer(address(POOL_MANAGER), uint256(-params.amountSpecified)),
+            "Transfer failed"
+        );
+        POOL_MANAGER.settle();
 
         // Execute the actual swap
         BalanceDelta delta = POOL_MANAGER.swap(key, params, abi.encode(orderId));
