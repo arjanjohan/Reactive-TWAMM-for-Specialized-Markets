@@ -485,21 +485,30 @@ contract TWAMMHook is IHooks, ITWAMMHook {
 
         require(op == 1, "Invalid operation");
 
-        // Settle input tokens into PoolManager (required in unlock flow)
-        Currency inputCurrency = _currentExecution.zeroForOne ? key.currency0 : key.currency1;
-        POOL_MANAGER.sync(inputCurrency);
-        require(
-            IERC20(Currency.unwrap(inputCurrency)).transfer(address(POOL_MANAGER), uint256(-params.amountSpecified)),
-            "Transfer failed"
-        );
-        POOL_MANAGER.settle();
-
-        // Execute the actual swap
+        // Execute swap first, then settle/take exact deltas (v4 unlock accounting)
         BalanceDelta delta = POOL_MANAGER.swap(key, params, abi.encode(orderId));
 
-        // Take the output tokens from the pool
+        int128 delta0 = delta.amount0();
+        int128 delta1 = delta.amount1();
+
+        // Settle any negative deltas owed by this hook
+        if (delta0 < 0) {
+            uint256 amount0In = uint256(uint128(-delta0));
+            POOL_MANAGER.sync(key.currency0);
+            require(IERC20(Currency.unwrap(key.currency0)).transfer(address(POOL_MANAGER), amount0In), "Transfer failed");
+            POOL_MANAGER.settle();
+        }
+
+        if (delta1 < 0) {
+            uint256 amount1In = uint256(uint128(-delta1));
+            POOL_MANAGER.sync(key.currency1);
+            require(IERC20(Currency.unwrap(key.currency1)).transfer(address(POOL_MANAGER), amount1In), "Transfer failed");
+            POOL_MANAGER.settle();
+        }
+
+        // Take positive output for TWAMM accounting/custody
         Currency outputCurrency = _currentExecution.zeroForOne ? key.currency1 : key.currency0;
-        int128 outputAmount = _currentExecution.zeroForOne ? delta.amount1() : delta.amount0();
+        int128 outputAmount = _currentExecution.zeroForOne ? delta1 : delta0;
         require(outputAmount > 0, "Invalid output amount");
 
         ITWAMMHook.TWAMMOrder storage order = orders[orderId];
