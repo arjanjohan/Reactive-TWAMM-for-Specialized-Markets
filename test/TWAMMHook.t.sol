@@ -120,7 +120,8 @@ contract TWAMMHookTest is Test {
             0,
             10 minutes,
             Currency.wrap(address(tokenA)),
-            Currency.wrap(address(tokenB))
+            Currency.wrap(address(tokenB)),
+            0
         );
         vm.stopPrank();
     }
@@ -133,7 +134,8 @@ contract TWAMMHookTest is Test {
             100 ether,
             30 seconds, // Less than MIN_CHUNK_DURATION (1 minute)
             Currency.wrap(address(tokenA)),
-            Currency.wrap(address(tokenB))
+            Currency.wrap(address(tokenB)),
+            0
         );
         vm.stopPrank();
     }
@@ -148,7 +150,8 @@ contract TWAMMHookTest is Test {
             100 ether,
             10 minutes,
             Currency.wrap(address(tokenA)),
-            Currency.wrap(address(tokenB))
+            Currency.wrap(address(tokenB)),
+            0
         );
         vm.stopPrank();
     }
@@ -176,7 +179,8 @@ contract TWAMMHookTest is Test {
             100 ether,
             10 minutes,
             Currency.wrap(address(tokenA)),
-            Currency.wrap(address(tokenB))
+            Currency.wrap(address(tokenB)),
+            0
         );
         
         vm.stopPrank();
@@ -202,7 +206,8 @@ contract TWAMMHookTest is Test {
             100 ether,
             10 minutes,
             Currency.wrap(address(tokenA)),
-            Currency.wrap(address(tokenB))
+            Currency.wrap(address(tokenB)),
+            0
         );
         
         // Cancel order
@@ -228,7 +233,8 @@ contract TWAMMHookTest is Test {
             100 ether,
             10 minutes,
             Currency.wrap(address(tokenA)),
-            Currency.wrap(address(tokenB))
+            Currency.wrap(address(tokenB)),
+            0
         );
         vm.stopPrank();
         
@@ -259,7 +265,8 @@ contract TWAMMHookTest is Test {
             100 ether,
             10 minutes,
             Currency.wrap(address(tokenA)),
-            Currency.wrap(address(tokenB))
+            Currency.wrap(address(tokenB)),
+            0
         );
         vm.stopPrank();
         
@@ -282,7 +289,8 @@ contract TWAMMHookTest is Test {
             100 ether,
             10 minutes,
             Currency.wrap(address(tokenA)),
-            Currency.wrap(address(tokenB))
+            Currency.wrap(address(tokenB)),
+            0
         );
         
         bytes32 orderId2 = hook.submitTWAMMOrder(
@@ -290,7 +298,8 @@ contract TWAMMHookTest is Test {
             50 ether,
             5 minutes,
             Currency.wrap(address(tokenA)),
-            Currency.wrap(address(tokenB))
+            Currency.wrap(address(tokenB)),
+            0
         );
         vm.stopPrank();
         

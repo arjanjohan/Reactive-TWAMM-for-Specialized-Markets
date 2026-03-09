@@ -138,7 +138,8 @@ contract TWAMMHookIntegrationTest is Test {
             1000 ether,      // 1000 tokenA
             10 minutes,      // Over 10 minutes
             Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenA) : address(tokenB)),
-            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA))
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA)),
+            0
         );
         vm.stopPrank();
         
@@ -216,7 +217,8 @@ contract TWAMMHookIntegrationTest is Test {
             1000 ether,
             10 minutes,
             Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenA) : address(tokenB)),
-            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA))
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA)),
+            0
         );
         
         uint256 balanceBeforeCancel = tokenA.balanceOf(alice);
@@ -258,7 +260,8 @@ contract TWAMMHookIntegrationTest is Test {
             500 ether,
             5 minutes,
             Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenA) : address(tokenB)),
-            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA))
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA)),
+            0
         );
         vm.stopPrank();
         
@@ -270,7 +273,8 @@ contract TWAMMHookIntegrationTest is Test {
             1000 ether,
             10 minutes,
             Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenA) : address(tokenB)),
-            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA))
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA)),
+            0
         );
         vm.stopPrank();
         

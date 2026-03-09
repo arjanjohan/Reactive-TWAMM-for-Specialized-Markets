@@ -54,7 +54,8 @@ contract SmokeTWAMM is Script {
             100 ether,
             10 minutes,
             Currency.wrap(address(inToken)),
-            Currency.wrap(address(outToken))
+            Currency.wrap(address(outToken)),
+            0
         );
 
         vm.stopBroadcast();
