@@ -3,12 +3,14 @@
 ## Quick Answers
 
 ### ✅ Is there a full test for demo?
-**YES** - Three integration tests in `test/TWAMMHook.integration.t.sol`:
-1. `test_Demo_TWAMMFullExecution` - Shows full flow (conceptual, needs swap wiring)
-2. `test_Demo_CancelPartialOrder` ✅ **PASSING** - Order cancellation with refund
-3. `test_Demo_MultipleOrders` ✅ **PASSING** - Multiple concurrent orders
+**YES** - Full integration now executes real chunks with real PoolManager accounting.
 
-**Total: 14 tests (11 unit + 3 integration), 13 passing**
+Current suites:
+1. `test/TWAMMHook.t.sol` → 15/15 passing
+2. `test/TWAMMHook.integration.t.sol` → 4/4 passing (includes full execution + slippage revert)
+3. `test/ReactiveTWAMM.t.sol` → 3/3 passing
+
+**Total: 22/22 passing**
 
 ### ⚠️ Is it mainnet ready?
 **NO** - About 60% ready. See detailed breakdown below.

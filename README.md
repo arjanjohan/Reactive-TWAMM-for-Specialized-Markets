@@ -18,7 +18,7 @@ Time-weighted automated market maker (TWAMM) hook for Uniswap v4 that uses React
 
 - **TWAMM Hook:** [`0x0E7849e4034146B37bb590c7E81D8BFAAAc210C0`](https://sepolia.uniscan.xyz/address/0x0E7849e4034146B37bb590c7E81D8BFAAAc210C0)
 - **ReactiveTWAMM:** [`0x62329f582D5865fb1459a9ba7384F9cdE55aF331`](https://sepolia.uniscan.xyz/address/0x62329f582D5865fb1459a9ba7384F9cdE55aF331)
-- **Reactive callback proxy (docs):** [`0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4`](https://sepolia.uniscan.xyz/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4)
+- **Reactive callback proxy (Unichain Sepolia live):** [`0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4`](https://sepolia.uniscan.xyz/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4)
 
 Deployment transactions:
 - Hook deploy tx: [`0x1f31c19fcc2bfe5302ff4c4af14a8388a74c43a3d6cb8c85576d8cc8145ac0d6`](https://sepolia.uniscan.xyz/tx/0x1f31c19fcc2bfe5302ff4c4af14a8388a74c43a3d6cb8c85576d8cc8145ac0d6)
@@ -28,7 +28,7 @@ Deployment transactions:
 |-----------|--------|------|
 | ✅ Foundry Setup | Complete | Feb 27 |
 | ✅ Core TWAMM Hook | Complete | Feb 27 |
-| 🔄 Test Coverage | In Progress | - |
+| ✅ Test Coverage | Complete (22/22 local) | Mar 9 |
 | ⏳ Reactive Integration | Pending | Week 2 |
 | ⏳ Frontend (optional) | Pending | Week 3 |
 
@@ -139,21 +139,11 @@ forge test -vv
 
 ## 📊 Test Coverage
 
-Current: **11/11 tests passing**
+Current: **22/22 tests passing**
 
-```
-[PASS] test_CancelOrder
-[PASS] test_Constructor
-[PASS] test_EnableTWAMM
-[PASS] test_GetOrderProgress
-[PASS] test_GetPoolOrders
-[PASS] test_RevertIf_InvalidAmount
-[PASS] test_RevertIf_InvalidDuration
-[PASS] test_RevertIf_NotOwner
-[PASS] test_RevertIf_OrderNotFound
-[PASS] test_RevertIf_TWAMMNotEnabled
-[PASS] test_SubmitOrder
-```
+- `TWAMMHook.t.sol`: 15/15 passing
+- `TWAMMHook.integration.t.sol`: 4/4 passing
+- `ReactiveTWAMM.t.sol`: 3/3 passing
 
 ---
 
