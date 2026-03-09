@@ -248,6 +248,29 @@ contract TWAMMHookIntegrationTest is Test {
     /**
      * @notice Test multiple concurrent orders
      */
+    function test_RevertIf_SlippageTooHigh() public {
+        _addLiquidity(lp, 50_000 ether, 50_000 ether);
+
+        vm.startPrank(alice);
+        tokenA.approve(address(hook), 10 ether);
+        bytes32 orderId = hook.submitTWAMMOrder(
+            poolKey,
+            10 ether,
+            10 minutes,
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenA) : address(tokenB)),
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA)),
+            1_000 ether
+        );
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 minutes);
+        vm.expectRevert();
+        hook.executeTWAMMChunk(poolKey, orderId);
+
+        (uint256 executed, ) = hook.getOrderProgress(orderId);
+        assertEq(executed, 0, "Chunk should not execute when slippage floor is too high");
+    }
+
     function test_Demo_MultipleOrders() public {
         console2.log("\n========================================");
         console2.log("DEMO: Multiple Concurrent Orders");
