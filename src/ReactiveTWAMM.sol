@@ -18,6 +18,9 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/types/PoolId.sol";
 contract ReactiveTWAMM {
     using PoolIdLibrary for PoolKey;
 
+    uint256 public constant UNICHAIN_SEPOLIA_CHAIN_ID = 1301;
+    uint64 public constant CALLBACK_GAS_LIMIT = 1_200_000;
+
     // ============ Errors ============
     error ReactiveTWAMM__UnauthorizedCallback();
     error ReactiveTWAMM__InvalidOrder();
@@ -29,6 +32,9 @@ contract ReactiveTWAMM {
     event Unsubscribed(PoolId indexed poolId, bytes32 indexed orderId);
     event ExecutionTriggered(PoolId indexed poolId, bytes32 indexed orderId, uint256 timestamp);
     event PriceConditionChecked(bytes32 indexed orderId, uint256 currentPrice, bool conditionMet);
+
+    // Reactive system callback event (picked up by Reactive infrastructure)
+    event Callback(uint256 indexed chain_id, address indexed _contract, uint64 indexed gas_limit, bytes payload);
 
     // ============ Structs ============
     struct Subscription {
@@ -257,19 +263,18 @@ contract ReactiveTWAMM {
      * @dev In production, this uses Reactive Network's cross-chain messaging
      */
     function _triggerExecution(address targetHook, PoolKey memory poolKey, bytes32 orderId) internal {
-        // This is the key integration point with Reactive Network
-        // The actual implementation would use Reactive's cross-chain callback mechanism
-        
-        // For the hackathon scaffold, we emit an event that would be picked up
-        // by Reactive Network infrastructure
-        
-        // In production:
-        // reactiveCallback(targetHook, abi.encodeWithSelector(
-        //     ITWAMMHook.executeTWAMMChunk.selector,
-        //     poolKey,
-        //     orderId
-        // ));
-        
+        // Build destination call payload for Unichain hook.
+        bytes memory payload = abi.encodeWithSelector(
+            ITWAMMHook.executeTWAMMChunk.selector,
+            poolKey,
+            orderId
+        );
+
+        // Emit Reactive callback instruction event.
+        // Reactive Network infrastructure listens for this event and delivers the
+        // callback transaction to the destination chain/contract.
+        emit Callback(UNICHAIN_SEPOLIA_CHAIN_ID, targetHook, CALLBACK_GAS_LIMIT, payload);
+
         emit ExecutionTriggered(poolKey.toId(), orderId, block.timestamp);
     }
 
