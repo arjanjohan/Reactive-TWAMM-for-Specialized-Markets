@@ -6,69 +6,57 @@ import {console2} from "forge-std/console2.sol";
 import {TWAMMHook} from "../src/TWAMMHook.sol";
 import {ReactiveTWAMM} from "../src/ReactiveTWAMM.sol";
 import {IPoolManager} from "@uniswap/v4-core/interfaces/IPoolManager.sol";
-import {PoolKey} from "@uniswap/v4-core/types/PoolKey.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/types/PoolId.sol";
-import {Currency} from "@uniswap/v4-core/types/Currency.sol";
 
 /**
  * @title DeployTWAMM
- * @notice Deployment script for TWAMM Hook and Reactive integration
- * @dev Run with: forge script script/DeployTWAMM.s.sol --rpc-url $UNICHAIN_RPC --broadcast
- * 
- * Unichain Sepolia Testnet:
- * - RPC: https://sepolia.unichain.org
- * - Chain ID: 1301
- * - PoolManager: 0x00b036b58a818b1bc34d502d3fe730db729e62ac
+ * @notice Deploy TWAMM Hook with CREATE2 mining so hook flags are embedded in address bits.
  */
 contract DeployTWAMM is Script {
-    using PoolIdLibrary for PoolKey;
-
-    // Unichain Sepolia Testnet v4 Contracts
-    // Source: https://docs.uniswap.org/contracts/v4/deployments
+    // Unichain Sepolia
     address constant POOL_MANAGER_SEPOLIA = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
-    address constant UNIVERSAL_ROUTER_SEPOLIA = 0xf70536B3bcC1bD1a972dc186A2cf84cC6da6Be5D;
-    address constant PERMIT2_SEPOLIA = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
-    
-    // TODO: Update with actual Reactive callback address when available
-    address constant REACTIVE_CALLBACK_SEPOLIA = address(0);
+
+    // Reactive callback proxy on Unichain Sepolia (from Reactive docs: Origins & Destinations)
+    address constant REACTIVE_CALLBACK_SEPOLIA = 0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4;
+
+    // CREATE2 deployer used by Foundry/Uniswap docs
+    address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+
+    // Required hook flags: afterInitialize (0x1000) + beforeSwap (0x80) + afterSwap (0x40)
+    uint160 constant REQUIRED_FLAGS = 0x10C0;
+    uint160 constant ALL_HOOK_MASK = uint160((1 << 14) - 1);
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
-        
+
         console2.log("========================================");
         console2.log("Deploying TWAMM Hook to Unichain Sepolia");
         console2.log("========================================");
         console2.log("Deployer:", deployer);
         console2.log("Chain ID:", block.chainid);
         console2.log("PoolManager:", POOL_MANAGER_SEPOLIA);
+        console2.log("Reactive Callback:", REACTIVE_CALLBACK_SEPOLIA);
         console2.log("");
+
+        bytes memory constructorArgs = abi.encode(IPoolManager(POOL_MANAGER_SEPOLIA));
+        bytes memory initCode = abi.encodePacked(type(TWAMMHook).creationCode, constructorArgs);
+
+        (bytes32 salt, address predictedHook) = _mineSalt(initCode, REQUIRED_FLAGS);
+        console2.log("Found salt:");
+        console2.logBytes32(salt);
+        console2.log("Predicted hook address:", predictedHook);
+        console2.log("Hook flags:", uint160(predictedHook) & 0xFFFF);
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy TWAMM Hook
-        // Hook must be deployed to address with correct flags:
-        // beforeSwap (bit 7): 0x80
-        // afterInitialize (bit 12): 0x1000  
-        // afterSwap (bit 6): 0x40
-        // Required mask: 0x10C0
-        console2.log("Deploying TWAMMHook...");
-        TWAMMHook hook = new TWAMMHook(IPoolManager(POOL_MANAGER_SEPOLIA));
-        console2.log("TWAMM Hook deployed at:", address(hook));
-        console2.log("Hook flags check:");
-        console2.log("  Address:", address(hook));
-        console2.log("  Flags (last 4 hex):", uint160(address(hook)) & 0xFFFF);
+        // Deploy hook with CREATE2 deployer
+        address hook = _deployCreate2(salt, initCode);
+        require(hook == predictedHook, "Hook address mismatch");
+        console2.log("TWAMM Hook deployed at:", hook);
 
-        // Deploy Reactive TWAMM (if Reactive Network is available)
-        if (REACTIVE_CALLBACK_SEPOLIA != address(0)) {
-            console2.log("");
-            console2.log("Deploying ReactiveTWAMM...");
-            ReactiveTWAMM reactive = new ReactiveTWAMM(REACTIVE_CALLBACK_SEPOLIA);
-            console2.log("Reactive TWAMM deployed at:", address(reactive));
-        } else {
-            console2.log("");
-            console2.log("Skipping ReactiveTWAMM (no callback address set)");
-        }
+        // Deploy reactive contract
+        ReactiveTWAMM reactive = new ReactiveTWAMM(REACTIVE_CALLBACK_SEPOLIA);
+        console2.log("ReactiveTWAMM deployed at:", address(reactive));
 
         vm.stopBroadcast();
 
@@ -76,36 +64,38 @@ contract DeployTWAMM is Script {
         console2.log("========================================");
         console2.log("Deployment complete!");
         console2.log("========================================");
-        console2.log("NEXT STEPS:");
-        console2.log("1. Update .env with deployed addresses");
-        console2.log("2. Verify contracts on Uniscan");
-        console2.log("3. Test hook with PoolSwapTest");
-        console2.log("4. Get test tokens from faucet");
+        console2.log("TWAMM_HOOK_ADDRESS=", hook);
+        console2.log("REACTIVE_TWAMM_ADDRESS=", address(reactive));
     }
-}
 
-/**
- * @title DeployToAnvil
- * @notice Local deployment for testing
- */
-contract DeployToAnvil is Script {
-    using PoolIdLibrary for PoolKey;
+    function _mineSalt(bytes memory initCode, uint160 flags) internal view returns (bytes32 salt, address hookAddr) {
+        bytes32 initCodeHash = keccak256(initCode);
 
-    function run() public {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        
-        // For local anvil, deploy a mock PoolManager first
-        vm.startBroadcast(deployerPrivateKey);
+        for (uint256 i = 0; i < 5_000_000; i++) {
+            salt = bytes32(i);
+            hookAddr = vm.computeCreate2Address(salt, initCodeHash, CREATE2_DEPLOYER);
+            if ((uint160(hookAddr) & ALL_HOOK_MASK) == flags) {
+                return (salt, hookAddr);
+            }
+        }
 
-        // Deploy mock PoolManager (would need actual implementation for full testing)
-        // MockPoolManager poolManager = new MockPoolManager();
-        
-        // Deploy hook at address with required flags
-        // Use vm.etch to deploy at specific address
-        address hookAddress = address(0x00000000000000000000000000000000000010C0);
-        
-        console2.log("Deploying to hook address:", hookAddress);
+        revert("Could not find valid hook salt");
+    }
 
-        vm.stopBroadcast();
+    function _deployCreate2(bytes32 salt, bytes memory initCode) internal returns (address deployed) {
+        bytes memory data = abi.encodePacked(salt, initCode);
+
+        (bool ok, bytes memory ret) = CREATE2_DEPLOYER.call(data);
+        require(ok, "CREATE2 deploy failed");
+
+        if (ret.length == 20) {
+            assembly ("memory-safe") {
+                deployed := shr(96, mload(add(ret, 32)))
+            }
+        } else if (ret.length == 32) {
+            deployed = abi.decode(ret, (address));
+        } else {
+            revert("Invalid CREATE2 return");
+        }
     }
 }
