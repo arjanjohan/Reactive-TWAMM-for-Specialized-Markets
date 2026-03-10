@@ -25,12 +25,12 @@ Deployment transactions:
 - Legacy Reactive deploy (Unichain): [`0x463d0372e952eebf96e3103095130be596c0a5c76081608e96dc4edf113f46a0`](https://sepolia.uniscan.xyz/tx/0x463d0372e952eebf96e3103095130be596c0a5c76081608e96dc4edf113f46a0)
 
 ### Reactive Lasna (automation layer)
-- **ReactiveTWAMM (Lasna):** `0x0608C330822aAbd78B346865B3F0744Db0841935`
-- **Deploy tx:** `0xb9734b7320dfb4fe0d489fb77fbb6b811717503f96479d02da5ee819d7fefacb`
+- **ReactiveTWAMM (Lasna):** `0x21fB2d43B2f2fCe35d9c468A882F0A99952DeF30`
+- **Deploy tx:** `0xa20ae016849c3f143b97ffde0b96c69c409204068a07ee32b9b110c06a43dfc8`
 
 Proof-of-flow txs on Lasna:
-- `subscribe(...)`: `0x7247283d8772cef009a2ebeb4670495a6546d8ee375d4b97b29a0ec04d88e934`
-- `batchExecute([orderId])` (emits `Callback` + `ExecutionTriggered`): `0x4d587a097a77fa4f08937f8f9dce574d79e1da6a4ca497717baea25bc19eb9a6`
+- `subscribe(...)`: `0x157a7cd5aae2f71176d5c45ba82a5df070e9489956ceccc0029f9e83605d76fc`
+- `batchExecute([orderId])` (emits `Callback` + `ExecutionTriggered`): `0xd1b902bf1a0be93cc68c65f230f0ab484916cc7c7448293b03b8f5ad2efd149b`
 
 ### ✅ Reactive Bounty Evidence (copy/paste)
 - Unichain Sepolia hook deployed and callable.
@@ -44,7 +44,7 @@ Proof-of-flow txs on Lasna:
 
 This proves a live Reactive-side automation path tied to our Unichain hook target, with verifiable tx hashes above.
 
-Note: `_triggerExecution` now emits Reactive `Callback(chain_id, contract, gas_limit, payload)` instructions using `ITWAMMHook.executeTWAMMChunk(...)` payload encoding for destination delivery.
+Note: `_triggerExecution` now emits Reactive `Callback(chain_id, contract, gas_limit, payload)` instructions using hardened payload encoding for `executeTWAMMChunkReactive(address rvmId, PoolKey, bytes32)` destination delivery.
 
 | Milestone | Status | Date |
 |-----------|--------|------|

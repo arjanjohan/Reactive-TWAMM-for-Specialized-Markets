@@ -45,6 +45,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     error TWAMMHook__OnlyOwner();
     error TWAMMHook__TWAMMNotEnabled();
     error TWAMMHook__OnlyPoolManager();
+    error TWAMMHook__UnauthorizedReactiveCallback();
     error HookNotImplemented();
 
     // Structs defined in ITWAMMHook interface
@@ -53,6 +54,10 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     IPoolManager public immutable POOL_MANAGER;
     address public owner;
     bool public paused;
+
+    // Reactive callback auth (destination-side hardening)
+    address public reactiveCallbackProxy;
+    address public authorizedReactiveRvmId;
     mapping(bytes32 => ITWAMMHook.TWAMMOrder) public orders;
     mapping(PoolId => bool) public twammEnabled;
     mapping(PoolId => bytes32[]) public poolOrders;
@@ -339,21 +344,19 @@ contract TWAMMHook is IHooks, ITWAMMHook {
      * @param orderId The order ID to execute
      */
     function executeTWAMMChunk(PoolKey calldata key, bytes32 orderId) external whenNotPaused {
-        ITWAMMHook.TWAMMOrder storage order = orders[orderId];
+        _validateChunkExecution(orderId);
+        _executeChunk(key, orderId);
+    }
 
-        if (order.owner == address(0)) revert TWAMMHook__OrderNotFound();
-        if (!order.active) revert TWAMMHook__OrderAlreadyCompleted();
-        if (order.cancelled) revert TWAMMHook__OrderCancelled();
-        if (order.executedChunks >= order.totalChunks) revert TWAMMHook__OrderAlreadyCompleted();
-
-        // Check if enough time has passed since last execution
-        uint256 timeSinceLastExecution = block.timestamp - order.lastExecutionTime;
-        uint256 chunkDuration = (order.endTime - order.startTime) / order.totalChunks;
-
-        if (timeSinceLastExecution < chunkDuration && order.lastExecutionTime != 0) {
-            revert TWAMMHook__ExecutionTooSoon();
+    /**
+     * @notice Reactive-only entrypoint via callback proxy (security-hardened path)
+     */
+    function executeTWAMMChunkReactive(address reactiveRvmId, PoolKey calldata key, bytes32 orderId) external whenNotPaused {
+        if (msg.sender != reactiveCallbackProxy || reactiveRvmId != authorizedReactiveRvmId) {
+            revert TWAMMHook__UnauthorizedReactiveCallback();
         }
 
+        _validateChunkExecution(orderId);
         _executeChunk(key, orderId);
     }
 
@@ -394,7 +397,28 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         owner = newOwner;
     }
 
+    function setReactiveCallbackConfig(address callbackProxy, address reactiveRvmId) external onlyOwner {
+        reactiveCallbackProxy = callbackProxy;
+        authorizedReactiveRvmId = reactiveRvmId;
+    }
+
     // ============ Internal Functions ============
+
+    function _validateChunkExecution(bytes32 orderId) internal view {
+        ITWAMMHook.TWAMMOrder storage order = orders[orderId];
+
+        if (order.owner == address(0)) revert TWAMMHook__OrderNotFound();
+        if (!order.active) revert TWAMMHook__OrderAlreadyCompleted();
+        if (order.cancelled) revert TWAMMHook__OrderCancelled();
+        if (order.executedChunks >= order.totalChunks) revert TWAMMHook__OrderAlreadyCompleted();
+
+        uint256 timeSinceLastExecution = block.timestamp - order.lastExecutionTime;
+        uint256 chunkDuration = (order.endTime - order.startTime) / order.totalChunks;
+
+        if (timeSinceLastExecution < chunkDuration && order.lastExecutionTime != 0) {
+            revert TWAMMHook__ExecutionTooSoon();
+        }
+    }
 
     function _processPendingOrders(PoolKey calldata key) internal {
         if (paused) return;

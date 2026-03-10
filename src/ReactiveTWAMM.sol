@@ -5,6 +5,11 @@ import {ITWAMMHook} from "./interfaces/ITWAMMHook.sol";
 import {PoolKey} from "@uniswap/v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/types/PoolId.sol";
 
+interface ISubscriptionService {
+    function subscribe(uint256 chain_id, address _contract, uint256 topic_0, uint256 topic_1, uint256 topic_2, uint256 topic_3) external;
+    function unsubscribe(uint256 chain_id, address _contract, uint256 topic_0, uint256 topic_1, uint256 topic_2, uint256 topic_3) external;
+}
+
 /**
  * @title ReactiveTWAMM
  * @notice Reactive Network contract that monitors and triggers TWAMM execution
@@ -20,6 +25,10 @@ contract ReactiveTWAMM {
 
     uint256 public constant UNICHAIN_SEPOLIA_CHAIN_ID = 1301;
     uint64 public constant CALLBACK_GAS_LIMIT = 1_200_000;
+    address public constant REACTIVE_SERVICE = 0x0000000000000000000000000000000000fffFfF;
+
+    // Cron10 event topic from Reactive docs (~1 min cadence)
+    uint256 public constant CRON10_TOPIC0 = 0x04463f7c1651e6b9774d7f85c85bb94654e3c46ca79b0c16fb16d4183307b687;
 
     // ============ Errors ============
     error ReactiveTWAMM__UnauthorizedCallback();
@@ -50,6 +59,21 @@ contract ReactiveTWAMM {
         bool aboveTarget; // true = execute if price >= target, false = execute if price <= target
     }
 
+    struct LogRecord {
+        uint256 chain_id;
+        address _contract;
+        uint256 topic_0;
+        uint256 topic_1;
+        uint256 topic_2;
+        uint256 topic_3;
+        bytes data;
+        uint256 block_number;
+        uint256 op_code;
+        uint256 block_hash;
+        uint256 tx_hash;
+        uint256 log_index;
+    }
+
     // ============ State ============
     // Reactive Network callback address (set by Reactive Network)
     address public immutable reactiveCallbackAddress;
@@ -63,6 +87,7 @@ contract ReactiveTWAMM {
     // Track all active order IDs for iteration
     bytes32[] public activeOrderIds;
     mapping(bytes32 => uint256) public orderIndex;
+    bool public cronSubscribed;
 
     // ============ Modifiers ============
     modifier onlyReactiveCallback() {
@@ -72,6 +97,11 @@ contract ReactiveTWAMM {
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Only owner");
+        _;
+    }
+
+    modifier onlyReactiveService() {
+        require(msg.sender == REACTIVE_SERVICE, "Only reactive service");
         _;
     }
 
@@ -111,6 +141,7 @@ contract ReactiveTWAMM {
         orderIndex[orderId] = activeOrderIds.length;
         activeOrderIds.push(orderId);
 
+        _ensureCronSubscribed();
         emit Subscribed(poolId, orderId);
     }
 
@@ -148,6 +179,7 @@ contract ReactiveTWAMM {
         orderIndex[orderId] = activeOrderIds.length;
         activeOrderIds.push(orderId);
 
+        _ensureCronSubscribed();
         emit Subscribed(poolId, orderId);
     }
 
@@ -225,14 +257,37 @@ contract ReactiveTWAMM {
         for (uint256 i = 0; i < orderIds.length; i++) {
             bytes32 orderId = orderIds[i];
             if (checkExecutionConditions(orderId)) {
-                // In production, this would queue for reactive callback
-                // For hackathon scaffold, direct call
                 Subscription memory sub = subscriptions[orderId];
                 if (sub.active) {
                     _triggerExecution(sub.targetHook, sub.poolKey, orderId);
                 }
             }
         }
+    }
+
+    /**
+     * @notice Reactive entrypoint: called by Reactive service when subscribed logs are received
+     */
+    function react(LogRecord calldata log) external onlyReactiveService {
+        if (log.topic_0 != CRON10_TOPIC0) return;
+
+        // Process a bounded number of active orders per tick for gas safety.
+        uint256 limit = activeOrderIds.length;
+        if (limit > 10) limit = 10;
+
+        for (uint256 i = 0; i < limit; i++) {
+            bytes32 orderId = activeOrderIds[i];
+            if (!checkExecutionConditions(orderId)) continue;
+
+            Subscription memory sub = subscriptions[orderId];
+            if (!sub.active) continue;
+
+            _triggerExecution(sub.targetHook, sub.poolKey, orderId);
+        }
+    }
+
+    function ensureCronSubscription() external onlyOwner {
+        _ensureCronSubscribed();
     }
 
     // ============ View Functions ============
@@ -263,19 +318,43 @@ contract ReactiveTWAMM {
      * @dev In production, this uses Reactive Network's cross-chain messaging
      */
     function _triggerExecution(address targetHook, PoolKey memory poolKey, bytes32 orderId) internal {
-        // Build destination call payload for Unichain hook.
+        // First argument is replaced by Reactive infra with the source RVM ID.
         bytes memory payload = abi.encodeWithSelector(
-            ITWAMMHook.executeTWAMMChunk.selector,
+            ITWAMMHook.executeTWAMMChunkReactive.selector,
+            address(0),
             poolKey,
             orderId
         );
 
-        // Emit Reactive callback instruction event.
-        // Reactive Network infrastructure listens for this event and delivers the
-        // callback transaction to the destination chain/contract.
         emit Callback(UNICHAIN_SEPOLIA_CHAIN_ID, targetHook, CALLBACK_GAS_LIMIT, payload);
-
         emit ExecutionTriggered(poolKey.toId(), orderId, block.timestamp);
+    }
+
+    function _ensureCronSubscribed() internal {
+        if (cronSubscribed) return;
+
+        uint256 size;
+        assembly {
+            size := extcodesize(REACTIVE_SERVICE)
+        }
+
+        // In local/unit tests there is no Reactive system contract deployed.
+        if (size == 0) return;
+
+        try ISubscriptionService(REACTIVE_SERVICE).subscribe(
+            block.chainid,
+            REACTIVE_SERVICE,
+            CRON10_TOPIC0,
+            0,
+            0,
+            0
+        ) {
+            cronSubscribed = true;
+        } catch {
+            // Not in RN execution context (e.g., plain EVM script path).
+            // Keep manual execution paths available.
+            cronSubscribed = false;
+        }
     }
 
     // ============ Admin Functions ============

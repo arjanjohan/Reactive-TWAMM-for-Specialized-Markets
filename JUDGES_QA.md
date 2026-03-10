@@ -11,11 +11,11 @@
 - This gives a real callback instruction path on Reactive side, with tx-linked evidence.
 
 ## 3) Can this move from scaffold to full cross-chain callback?
-Yes. The short path is:
-1. Replace `_triggerExecution` internals with Reactive callback transport call.
-2. Keep existing callback-auth checks (proxy + RVM ID validation pattern).
-3. Run E2E on testnets: origin trigger → Lasna react → destination execution.
-4. Add tx-link evidence for all three legs.
+Yes. We already moved one step further:
+1. `_triggerExecution` now emits Reactive `Callback(...)` transport instructions with encoded destination payload.
+2. Reactive contract now includes a real `react(LogRecord)` entrypoint (cron-compatible).
+3. Destination hook code now includes a hardened `executeTWAMMChunkReactive(rvmId, ...)` path with proxy + RVM-ID auth.
+4. Final step is redeploying destination hook with that hardened entrypoint and capturing autonomous end-to-end callback tx links.
 
 ## 4) Why use Reactive instead of off-chain keepers?
 - Reduces reliance on centralized cron/keeper infra.
