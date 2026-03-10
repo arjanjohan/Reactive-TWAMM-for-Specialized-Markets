@@ -27,13 +27,13 @@ Deployment transactions:
 - Smoke order submit on latest hook: [`0x023f32945a50db0e8285a67dce1f51d49062c6ea11bbd92503145e8dd211c8a7`](https://sepolia.uniscan.xyz/tx/0x023f32945a50db0e8285a67dce1f51d49062c6ea11bbd92503145e8dd211c8a7)
 
 ### Reactive Lasna (automation layer)
-- **ReactiveTWAMM (Lasna):** `0x13bcFEE59c01b4472d85c2A6833CFb63c6e76b01`
-- **Deploy tx:** `0xe73c36d13e5a6935d8609cd48d50f571ee20a433522595ed45ee96b6252cd3d6`
-- **Cron subscription tx (`ensureCronSubscription`)**: `0xb06e0eab8022c010ee585b31cef4ad490128c2dd18d06fad224400a8996e3f04`
+- **ReactiveTWAMM (Lasna, latest):** `0x7Ec9b8802342a119FACCd228b806eC49B4124D17`
+- **Deploy tx (latest):** `0xb8a048765451439bd4cb81dc5b6296adeedf09e585b218b9e84e006bf1b4072f`
+- **Cron subscription tx (`ensureCronSubscription`, latest):** `0x29fa63f6558a07fce197633b164d9c4c5e94fd468b2bca6ea09773c4dd301393`
 
-Proof-of-flow txs on Lasna (targeting latest Unichain hook):
-- `subscribe(...)`: `0xabe9a771fcb04116b724d3ec983d2301bf575d8f4e004ae9ba450c09105c9d40`
-- `batchExecute([orderId])` (emits `Callback` + `ExecutionTriggered`): `0x6761febe4be8e665625b440786c0441e5b458094356c06d04db750a97abf64da`
+Proof-of-flow txs on Lasna (latest, targeting latest Unichain hook):
+- `subscribe(...)`: `0x8b1ea57725fdd06f614cbed99f4fa49058a34257cce8a30faadecea6261cee93`
+- `batchExecute([orderId])` (emits `Callback` + `ExecutionTriggered`): `0x75f46b714ff69894a4637a2e4ba8ebd7d4b44cd93481e946ee43874fd9c67de0`
 
 ### ✅ Reactive Bounty Evidence (copy/paste)
 - Unichain Sepolia hook deployed and callable.
