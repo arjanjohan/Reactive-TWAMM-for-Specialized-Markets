@@ -88,6 +88,7 @@ contract ReactiveTWAMM {
     bytes32[] public activeOrderIds;
     mapping(bytes32 => uint256) public orderIndex;
     bool public cronSubscribed;
+    bool public vm;
 
     // ============ Modifiers ============
     modifier onlyReactiveCallback() {
@@ -105,10 +106,16 @@ contract ReactiveTWAMM {
         _;
     }
 
+    modifier rnOnly() {
+        require(!vm, "Reactive Network only");
+        _;
+    }
+
     // ============ Constructor ============
     constructor(address _reactiveCallbackAddress) {
         reactiveCallbackAddress = _reactiveCallbackAddress;
         owner = msg.sender;
+        _detectVm();
     }
 
     // ============ External Functions ============
@@ -266,7 +273,7 @@ contract ReactiveTWAMM {
         }
     }
 
-    function ensureCronSubscription() external onlyOwner {
+    function ensureCronSubscription() external onlyOwner rnOnly {
         _ensureCronSubscribed();
     }
 
@@ -342,12 +349,6 @@ contract ReactiveTWAMM {
     function _ensureCronSubscribed() internal {
         if (cronSubscribed) return;
 
-        uint256 size;
-        assembly {
-            size := extcodesize(REACTIVE_SERVICE)
-        }
-        require(size > 0, "Reactive service missing");
-
         ISubscriptionService(REACTIVE_SERVICE).subscribe(
             block.chainid,
             REACTIVE_SERVICE,
@@ -358,6 +359,14 @@ contract ReactiveTWAMM {
         );
 
         cronSubscribed = true;
+    }
+
+    function _detectVm() internal {
+        uint256 size;
+        assembly {
+            size := extcodesize(REACTIVE_SERVICE)
+        }
+        vm = size == 0;
     }
 
     // ============ Admin Functions ============
