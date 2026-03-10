@@ -124,24 +124,15 @@ contract ReactiveTWAMM {
         PoolKey calldata poolKey,
         bytes32 orderId
     ) external onlyOwner {
-        PoolId poolId = poolKey.toId();
-        
-        subscriptions[orderId] = Subscription({
-            targetHook: targetHook,
-            poolKey: poolKey,
-            orderId: orderId,
-            lastExecutionTime: 0,
-            active: true,
-            usePriceCondition: false,
-            priceFeed: address(0),
-            targetPrice: 0,
-            aboveTarget: false
-        });
-
-        orderIndex[orderId] = activeOrderIds.length;
-        activeOrderIds.push(orderId);
-
-        emit Subscribed(poolId, orderId);
+        _storeSubscription(
+            targetHook,
+            poolKey,
+            orderId,
+            false,
+            address(0),
+            0,
+            false
+        );
     }
 
     /**
@@ -161,24 +152,15 @@ contract ReactiveTWAMM {
         uint256 targetPrice,
         bool aboveTarget
     ) external onlyOwner {
-        PoolId poolId = poolKey.toId();
-        
-        subscriptions[orderId] = Subscription({
-            targetHook: targetHook,
-            poolKey: poolKey,
-            orderId: orderId,
-            lastExecutionTime: 0,
-            active: true,
-            usePriceCondition: true,
-            priceFeed: priceFeed,
-            targetPrice: targetPrice,
-            aboveTarget: aboveTarget
-        });
-
-        orderIndex[orderId] = activeOrderIds.length;
-        activeOrderIds.push(orderId);
-
-        emit Subscribed(poolId, orderId);
+        _storeSubscription(
+            targetHook,
+            poolKey,
+            orderId,
+            true,
+            priceFeed,
+            targetPrice,
+            aboveTarget
+        );
     }
 
     /**
@@ -326,6 +308,35 @@ contract ReactiveTWAMM {
 
         emit Callback(UNICHAIN_SEPOLIA_CHAIN_ID, targetHook, CALLBACK_GAS_LIMIT, payload);
         emit ExecutionTriggered(poolKey.toId(), orderId, block.timestamp);
+    }
+
+    function _storeSubscription(
+        address targetHook,
+        PoolKey calldata poolKey,
+        bytes32 orderId,
+        bool usePriceCondition,
+        address priceFeed,
+        uint256 targetPrice,
+        bool aboveTarget
+    ) internal {
+        PoolId poolId = poolKey.toId();
+
+        subscriptions[orderId] = Subscription({
+            targetHook: targetHook,
+            poolKey: poolKey,
+            orderId: orderId,
+            lastExecutionTime: 0,
+            active: true,
+            usePriceCondition: usePriceCondition,
+            priceFeed: priceFeed,
+            targetPrice: targetPrice,
+            aboveTarget: aboveTarget
+        });
+
+        orderIndex[orderId] = activeOrderIds.length;
+        activeOrderIds.push(orderId);
+
+        emit Subscribed(poolId, orderId);
     }
 
     function _ensureCronSubscribed() internal {
