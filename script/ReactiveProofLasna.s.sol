@@ -12,7 +12,7 @@ import {IHooks} from "@uniswap/v4-core/interfaces/IHooks.sol";
  * @notice Minimal proof flow on Lasna: subscribe + batchExecute
  */
 contract ReactiveProofLasna is Script {
-    address constant REACTIVE_TWAMM_LASNA = 0x21fB2d43B2f2fCe35d9c468A882F0A99952DeF30;
+    address constant REACTIVE_TWAMM_LASNA = 0x13bcFEE59c01b4472d85c2A6833CFb63c6e76b01;
     address constant UNICHAIN_HOOK = 0x0E7849e4034146B37bb590c7E81D8BFAAAc210C0;
 
     // Reusing token pair observed in Unichain smoke attempt

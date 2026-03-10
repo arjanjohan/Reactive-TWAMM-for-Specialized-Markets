@@ -25,12 +25,13 @@ Deployment transactions:
 - Legacy Reactive deploy (Unichain): [`0x463d0372e952eebf96e3103095130be596c0a5c76081608e96dc4edf113f46a0`](https://sepolia.uniscan.xyz/tx/0x463d0372e952eebf96e3103095130be596c0a5c76081608e96dc4edf113f46a0)
 
 ### Reactive Lasna (automation layer)
-- **ReactiveTWAMM (Lasna):** `0x21fB2d43B2f2fCe35d9c468A882F0A99952DeF30`
-- **Deploy tx:** `0xa20ae016849c3f143b97ffde0b96c69c409204068a07ee32b9b110c06a43dfc8`
+- **ReactiveTWAMM (Lasna):** `0x13bcFEE59c01b4472d85c2A6833CFb63c6e76b01`
+- **Deploy tx:** `0xe73c36d13e5a6935d8609cd48d50f571ee20a433522595ed45ee96b6252cd3d6`
+- **Cron subscription tx (`ensureCronSubscription`)**: `0xb06e0eab8022c010ee585b31cef4ad490128c2dd18d06fad224400a8996e3f04`
 
 Proof-of-flow txs on Lasna:
-- `subscribe(...)`: `0x157a7cd5aae2f71176d5c45ba82a5df070e9489956ceccc0029f9e83605d76fc`
-- `batchExecute([orderId])` (emits `Callback` + `ExecutionTriggered`): `0xd1b902bf1a0be93cc68c65f230f0ab484916cc7c7448293b03b8f5ad2efd149b`
+- `subscribe(...)`: `0xd32f1b5c5e5f26989b4526d3d4411f3505111fb853421a2b6dd8fcdf8f6e618f`
+- `batchExecute([orderId])` (emits `Callback` + `ExecutionTriggered`): `0xe914aec247da2200bff4f63e694c402aaf5202f86cd0142b12808f417653ef18`
 
 ### ✅ Reactive Bounty Evidence (copy/paste)
 - Unichain Sepolia hook deployed and callable.
