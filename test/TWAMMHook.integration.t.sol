@@ -78,7 +78,7 @@ contract TWAMMHookIntegrationTest is Test {
             (tokenB, tokenA);
         
         // Deploy hook at address with correct flags
-        deployCodeTo("TWAMMHook.sol:TWAMMHook", abi.encode(address(poolManager)), HOOK_ADDRESS);
+        deployCodeTo("TWAMMHook.sol:TWAMMHook", abi.encode(address(poolManager), address(this)), HOOK_ADDRESS);
         hook = TWAMMHook(HOOK_ADDRESS);
 
         // Deploy v4 test router for real liquidity integration

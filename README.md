@@ -17,21 +17,23 @@ Time-weighted automated market maker (TWAMM) hook for Uniswap v4 that uses React
 ## 🚀 Testnet Deployment (Unichain Sepolia + Reactive Lasna)
 
 ### Unichain Sepolia (destination)
-- **TWAMM Hook:** [`0x0E7849e4034146B37bb590c7E81D8BFAAAc210C0`](https://sepolia.uniscan.xyz/address/0x0E7849e4034146B37bb590c7E81D8BFAAAc210C0)
+- **TWAMM Hook (latest):** [`0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0`](https://sepolia.uniscan.xyz/address/0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0)
 - **Reactive callback proxy (Unichain Sepolia live):** [`0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4`](https://sepolia.uniscan.xyz/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4)
+- **Reactive callback config tx (latest hook):** [`0x945bdee7a1e49a580babda60d595a60814bc4085fc66c5fc3d3a2aad32d1a3ce`](https://sepolia.uniscan.xyz/tx/0x945bdee7a1e49a580babda60d595a60814bc4085fc66c5fc3d3a2aad32d1a3ce)
 
 Deployment transactions:
-- Hook deploy tx: [`0x1f31c19fcc2bfe5302ff4c4af14a8388a74c43a3d6cb8c85576d8cc8145ac0d6`](https://sepolia.uniscan.xyz/tx/0x1f31c19fcc2bfe5302ff4c4af14a8388a74c43a3d6cb8c85576d8cc8145ac0d6)
-- Legacy Reactive deploy (Unichain): [`0x463d0372e952eebf96e3103095130be596c0a5c76081608e96dc4edf113f46a0`](https://sepolia.uniscan.xyz/tx/0x463d0372e952eebf96e3103095130be596c0a5c76081608e96dc4edf113f46a0)
+- Hook deploy tx (latest): [`0x422f0e5fdcf3d0483a81821bad5e15b94edb44079c0337ba328c0d483d1c8e83`](https://sepolia.uniscan.xyz/tx/0x422f0e5fdcf3d0483a81821bad5e15b94edb44079c0337ba328c0d483d1c8e83)
+- ReactiveTWAMM deploy on Unichain: [`0x7feb7debab91d30f47334d32e81a40b54a067e9ed4ca6eda159ae18481b670e7`](https://sepolia.uniscan.xyz/tx/0x7feb7debab91d30f47334d32e81a40b54a067e9ed4ca6eda159ae18481b670e7)
+- Smoke order submit on latest hook: [`0x023f32945a50db0e8285a67dce1f51d49062c6ea11bbd92503145e8dd211c8a7`](https://sepolia.uniscan.xyz/tx/0x023f32945a50db0e8285a67dce1f51d49062c6ea11bbd92503145e8dd211c8a7)
 
 ### Reactive Lasna (automation layer)
 - **ReactiveTWAMM (Lasna):** `0x13bcFEE59c01b4472d85c2A6833CFb63c6e76b01`
 - **Deploy tx:** `0xe73c36d13e5a6935d8609cd48d50f571ee20a433522595ed45ee96b6252cd3d6`
 - **Cron subscription tx (`ensureCronSubscription`)**: `0xb06e0eab8022c010ee585b31cef4ad490128c2dd18d06fad224400a8996e3f04`
 
-Proof-of-flow txs on Lasna:
-- `subscribe(...)`: `0xd32f1b5c5e5f26989b4526d3d4411f3505111fb853421a2b6dd8fcdf8f6e618f`
-- `batchExecute([orderId])` (emits `Callback` + `ExecutionTriggered`): `0xe914aec247da2200bff4f63e694c402aaf5202f86cd0142b12808f417653ef18`
+Proof-of-flow txs on Lasna (targeting latest Unichain hook):
+- `subscribe(...)`: `0xabe9a771fcb04116b724d3ec983d2301bf575d8f4e004ae9ba450c09105c9d40`
+- `batchExecute([orderId])` (emits `Callback` + `ExecutionTriggered`): `0x6761febe4be8e665625b440786c0441e5b458094356c06d04db750a97abf64da`
 
 ### ✅ Reactive Bounty Evidence (copy/paste)
 - Unichain Sepolia hook deployed and callable.

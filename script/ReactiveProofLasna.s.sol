@@ -13,7 +13,7 @@ import {IHooks} from "@uniswap/v4-core/interfaces/IHooks.sol";
  */
 contract ReactiveProofLasna is Script {
     address constant REACTIVE_TWAMM_LASNA = 0x13bcFEE59c01b4472d85c2A6833CFb63c6e76b01;
-    address constant UNICHAIN_HOOK = 0x0E7849e4034146B37bb590c7E81D8BFAAAc210C0;
+    address constant UNICHAIN_HOOK = 0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0;
 
     // Reusing token pair observed in Unichain smoke attempt
     address constant TOKEN0 = 0xEc2b561F6dA40e321759F3C7Bc1484a9b743385e;

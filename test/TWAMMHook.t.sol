@@ -91,7 +91,7 @@ contract TWAMMHookTest is Test {
             (address(tokenB), address(tokenA));
         
         // Deploy hook at specific address with valid flags
-        deployCodeTo("TWAMMHook.sol:TWAMMHook", abi.encode(address(poolManager)), HOOK_ADDRESS);
+        deployCodeTo("TWAMMHook.sol:TWAMMHook", abi.encode(address(poolManager), address(this)), HOOK_ADDRESS);
         hook = TWAMMHook(HOOK_ADDRESS);
         
         // Create pool key

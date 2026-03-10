@@ -101,9 +101,9 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     event Unpaused(address account);
 
     // ============ Constructor ============
-    constructor(IPoolManager _POOL_MANAGER) {
+    constructor(IPoolManager _POOL_MANAGER, address initialOwner) {
         POOL_MANAGER = _POOL_MANAGER;
-        owner = msg.sender;
+        owner = initialOwner;
 
         // Validate hook permissions
         // beforeSwap enabled to track TWAMM-originated swaps
