@@ -141,7 +141,6 @@ contract ReactiveTWAMM {
         orderIndex[orderId] = activeOrderIds.length;
         activeOrderIds.push(orderId);
 
-        _ensureCronSubscribed();
         emit Subscribed(poolId, orderId);
     }
 
@@ -179,7 +178,6 @@ contract ReactiveTWAMM {
         orderIndex[orderId] = activeOrderIds.length;
         activeOrderIds.push(orderId);
 
-        _ensureCronSubscribed();
         emit Subscribed(poolId, orderId);
     }
 
@@ -337,24 +335,18 @@ contract ReactiveTWAMM {
         assembly {
             size := extcodesize(REACTIVE_SERVICE)
         }
+        require(size > 0, "Reactive service missing");
 
-        // In local/unit tests there is no Reactive system contract deployed.
-        if (size == 0) return;
-
-        try ISubscriptionService(REACTIVE_SERVICE).subscribe(
+        ISubscriptionService(REACTIVE_SERVICE).subscribe(
             block.chainid,
             REACTIVE_SERVICE,
             CRON10_TOPIC0,
             0,
             0,
             0
-        ) {
-            cronSubscribed = true;
-        } catch {
-            // Not in RN execution context (e.g., plain EVM script path).
-            // Keep manual execution paths available.
-            cronSubscribed = false;
-        }
+        );
+
+        cronSubscribed = true;
     }
 
     // ============ Admin Functions ============
