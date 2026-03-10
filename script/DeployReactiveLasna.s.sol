@@ -14,7 +14,7 @@ contract DeployReactiveLasna is Script {
     address constant REACTIVE_CALLBACK_LASNA = 0x0000000000000000000000000000000000fffFfF;
 
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerPrivateKey = _loadPrivateKey();
         address deployer = vm.addr(deployerPrivateKey);
 
         console2.log("========================================");
@@ -34,5 +34,16 @@ contract DeployReactiveLasna is Script {
         console2.log("ReactiveTWAMM deployed at:", address(reactive));
         console2.log("Export:");
         console2.log("LASNA_REACTIVE_TWAMM_ADDRESS=", address(reactive));
+    }
+
+    function _loadPrivateKey() internal view returns (uint256) {
+        string memory raw = vm.envString("PRIVATE_KEY");
+        bytes memory b = bytes(raw);
+
+        if (b.length >= 2 && b[0] == bytes1("0") && (b[1] == bytes1("x") || b[1] == bytes1("X"))) {
+            return vm.parseUint(raw);
+        }
+
+        return vm.parseUint(string(abi.encodePacked("0x", raw)));
     }
 }

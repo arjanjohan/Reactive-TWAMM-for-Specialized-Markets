@@ -19,7 +19,7 @@ contract SmokeTWAMM is Script {
     uint160 constant SQRT_PRICE_X96 = 79228162514264337593543950336; // 1:1
 
     function run() external {
-        uint256 pk = vm.envUint("PRIVATE_KEY");
+        uint256 pk = _loadPrivateKey();
         address deployer = vm.addr(pk);
 
         vm.startBroadcast(pk);
@@ -65,5 +65,16 @@ contract SmokeTWAMM is Script {
         console2.log("Token B:", address(tokenB));
         console2.log("Order ID:");
         console2.logBytes32(orderId);
+    }
+
+    function _loadPrivateKey() internal view returns (uint256) {
+        string memory raw = vm.envString("PRIVATE_KEY");
+        bytes memory b = bytes(raw);
+
+        if (b.length >= 2 && b[0] == bytes1("0") && (b[1] == bytes1("x") || b[1] == bytes1("X"))) {
+            return vm.parseUint(raw);
+        }
+
+        return vm.parseUint(string(abi.encodePacked("0x", raw)));
     }
 }
