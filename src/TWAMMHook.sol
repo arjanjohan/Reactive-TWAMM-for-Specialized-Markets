@@ -40,6 +40,9 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     error TWAMMHook__OrderCancelled();
     error TWAMMHook__NoChunksToExecute();
     error TWAMMHook__ExecutionTooSoon();
+    error TWAMMHook__SlippageTooHigh();
+    error TWAMMHook__Paused();
+    error TWAMMHook__OnlyOwner();
     error TWAMMHook__TWAMMNotEnabled();
     error TWAMMHook__OnlyPoolManager();
     error HookNotImplemented();
@@ -48,6 +51,8 @@ contract TWAMMHook is IHooks, ITWAMMHook {
 
     // State variables
     IPoolManager public immutable POOL_MANAGER;
+    address public owner;
+    bool public paused;
     mapping(bytes32 => ITWAMMHook.TWAMMOrder) public orders;
     mapping(PoolId => bool) public twammEnabled;
     mapping(PoolId => bytes32[]) public poolOrders;
@@ -56,6 +61,16 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     uint256 public constant MAX_CHUNKS = 100;
     uint256 public orderCounter;
 
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert TWAMMHook__OnlyOwner();
+        _;
+    }
+
+    modifier whenNotPaused() {
+        if (paused) revert TWAMMHook__Paused();
+        _;
+    }
+
     // ============ Events ============
     event OrderSubmitted(
         bytes32 indexed orderId,
@@ -63,7 +78,8 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         PoolId indexed poolId,
         uint256 totalAmount,
         uint256 totalChunks,
-        uint256 endTime
+        uint256 endTime,
+        uint256 minOutputPerChunk
     );
 
     event ChunkExecuted(
@@ -76,10 +92,13 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     event OrderCompleted(bytes32 indexed orderId);
     event OrderCancelled(bytes32 indexed orderId);
     event TWAMMEnabled(PoolId indexed poolId);
+    event Paused(address account);
+    event Unpaused(address account);
 
     // ============ Constructor ============
     constructor(IPoolManager _POOL_MANAGER) {
         POOL_MANAGER = _POOL_MANAGER;
+        owner = msg.sender;
 
         // Validate hook permissions
         // beforeSwap enabled to track TWAMM-originated swaps
@@ -242,8 +261,9 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         uint256 amount,
         uint256 duration,
         Currency tokenIn,
-        Currency tokenOut
-    ) external returns (bytes32 orderId) {
+        Currency tokenOut,
+        uint256 minOutputPerChunk
+    ) external whenNotPaused returns (bytes32 orderId) {
         if (amount == 0) revert TWAMMHook__InvalidAmount();
         if (duration < MIN_CHUNK_DURATION) revert TWAMMHook__InvalidDuration();
 
@@ -268,6 +288,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
             startTime: block.timestamp,
             endTime: block.timestamp + duration,
             lastExecutionTime: 0,
+            minOutputPerChunk: minOutputPerChunk,
             active: true,
             cancelled: false
         });
@@ -277,7 +298,15 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         // Transfer tokens from user to hook
         IERC20(Currency.unwrap(tokenIn)).transferFrom(msg.sender, address(this), amount);
 
-        emit OrderSubmitted(orderId, msg.sender, poolId, amount, numChunks, block.timestamp + duration);
+        emit OrderSubmitted(
+            orderId,
+            msg.sender,
+            poolId,
+            amount,
+            numChunks,
+            block.timestamp + duration,
+            minOutputPerChunk
+        );
     }
 
     /**
@@ -309,7 +338,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
      * @param key The pool key
      * @param orderId The order ID to execute
      */
-    function executeTWAMMChunk(PoolKey calldata key, bytes32 orderId) external {
+    function executeTWAMMChunk(PoolKey calldata key, bytes32 orderId) external whenNotPaused {
         ITWAMMHook.TWAMMOrder storage order = orders[orderId];
 
         if (order.owner == address(0)) revert TWAMMHook__OrderNotFound();
@@ -343,9 +372,32 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         return (order.executedChunks, order.totalChunks);
     }
 
+    /**
+     * @notice Pause or unpause the hook
+     * @param _paused True to pause, false to unpause
+     */
+    function setPaused(bool _paused) external onlyOwner {
+        paused = _paused;
+        if (_paused) {
+            emit Paused(msg.sender);
+        } else {
+            emit Unpaused(msg.sender);
+        }
+    }
+
+    /**
+     * @notice Transfer ownership of the hook
+     * @param newOwner The new owner address
+     */
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "Invalid owner");
+        owner = newOwner;
+    }
+
     // ============ Internal Functions ============
 
     function _processPendingOrders(PoolKey calldata key) internal {
+        if (paused) return;
         PoolId poolId = key.toId();
         bytes32[] storage ordersList = poolOrders[poolId];
 
@@ -433,9 +485,14 @@ contract TWAMMHook is IHooks, ITWAMMHook {
 
         require(op == 1, "Invalid operation");
 
-        // Pull tokens from hook into PoolManager
-        require(IERC20(Currency.unwrap(_currentExecution.zeroForOne ? key.currency0 : key.currency1))
-            .transfer(address(POOL_MANAGER), uint256(-params.amountSpecified)), "Transfer failed");
+        // Settle input tokens into PoolManager (required in unlock flow)
+        Currency inputCurrency = _currentExecution.zeroForOne ? key.currency0 : key.currency1;
+        POOL_MANAGER.sync(inputCurrency);
+        require(
+            IERC20(Currency.unwrap(inputCurrency)).transfer(address(POOL_MANAGER), uint256(-params.amountSpecified)),
+            "Transfer failed"
+        );
+        POOL_MANAGER.settle();
 
         // Execute the actual swap
         BalanceDelta delta = POOL_MANAGER.swap(key, params, abi.encode(orderId));
@@ -444,7 +501,14 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         Currency outputCurrency = _currentExecution.zeroForOne ? key.currency1 : key.currency0;
         int128 outputAmount = _currentExecution.zeroForOne ? delta.amount1() : delta.amount0();
         require(outputAmount > 0, "Invalid output amount");
-        POOL_MANAGER.take(outputCurrency, address(this), uint256(uint128(outputAmount)));
+
+        ITWAMMHook.TWAMMOrder storage order = orders[orderId];
+        uint256 amountOut = uint256(uint128(outputAmount));
+        if (order.minOutputPerChunk > 0 && amountOut < order.minOutputPerChunk) {
+            revert TWAMMHook__SlippageTooHigh();
+        }
+
+        POOL_MANAGER.take(outputCurrency, address(this), amountOut);
 
         return abi.encode(delta);
     }

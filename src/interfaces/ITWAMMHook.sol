@@ -21,6 +21,7 @@ interface ITWAMMHook {
         uint256 startTime;
         uint256 endTime;
         uint256 lastExecutionTime;
+        uint256 minOutputPerChunk;
         bool active;
         bool cancelled;
     }
@@ -37,7 +38,8 @@ interface ITWAMMHook {
         uint256 amount,
         uint256 duration,
         Currency tokenIn,
-        Currency tokenOut
+        Currency tokenOut,
+        uint256 minOutputPerChunk
     ) external returns (bytes32 orderId);
 
     function cancelTWAMMOrder(bytes32 orderId) external;
