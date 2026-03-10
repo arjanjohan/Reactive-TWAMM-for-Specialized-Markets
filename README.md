@@ -32,6 +32,18 @@ Proof-of-flow txs on Lasna:
 - `subscribe(...)`: `0xd0383da502d54b301e118fa628be9edae3b8c66766b9a082ee988656f90f73ff`
 - `batchExecute([orderId])`: `0xa24d2287e5faffb69b449952df1fb9fd23c67503fd55578e28c32c089b5e1d0d`
 
+### ✅ Reactive Bounty Evidence (copy/paste)
+- Unichain Sepolia hook deployed and callable.
+- Reactive Lasna automation contract deployed by team wallet.
+- On Lasna, team executed:
+  1. `subscribe(...)` for a Unichain hook target
+  2. `batchExecute([orderId])` to trigger execution event
+- Resulting on-chain events emitted on Lasna:
+  - `Subscribed(poolId, orderId)`
+  - `ExecutionTriggered(poolId, orderId, timestamp)`
+
+This proves a live Reactive-side automation path tied to our Unichain hook target, with verifiable tx hashes above.
+
 | Milestone | Status | Date |
 |-----------|--------|------|
 | ✅ Foundry Setup | Complete | Feb 27 |

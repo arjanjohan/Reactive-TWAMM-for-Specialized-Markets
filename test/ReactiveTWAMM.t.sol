@@ -59,4 +59,18 @@ contract ReactiveTWAMMTest is Test {
         ReactiveTWAMM.Subscription memory sub = reactive.getSubscription(ORDER_ID);
         assertTrue(sub.active);
     }
+
+    function test_BatchExecute_SkipsInactiveOrder() public {
+        reactive.subscribe(targetHook, poolKey, ORDER_ID);
+        reactive.unsubscribe(ORDER_ID);
+
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = ORDER_ID;
+
+        // Should not revert and should not reactivate unsubscribed order.
+        reactive.batchExecute(ids);
+
+        ReactiveTWAMM.Subscription memory sub = reactive.getSubscription(ORDER_ID);
+        assertFalse(sub.active);
+    }
 }
