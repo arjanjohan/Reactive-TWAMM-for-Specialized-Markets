@@ -26,7 +26,7 @@ contract DeployTWAMM is Script {
     uint160 constant ALL_HOOK_MASK = uint160((1 << 14) - 1);
 
     function run() public {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerPrivateKey = _loadPrivateKey();
         address deployer = vm.addr(deployerPrivateKey);
 
         console2.log("========================================");
@@ -97,5 +97,16 @@ contract DeployTWAMM is Script {
         } else {
             revert("Invalid CREATE2 return");
         }
+    }
+
+    function _loadPrivateKey() internal view returns (uint256) {
+        string memory raw = vm.envString("PRIVATE_KEY");
+        bytes memory b = bytes(raw);
+
+        if (b.length >= 2 && b[0] == bytes1("0") && (b[1] == bytes1("x") || b[1] == bytes1("X"))) {
+            return vm.parseUint(raw);
+        }
+
+        return vm.parseUint(string(abi.encodePacked("0x", raw)));
     }
 }
