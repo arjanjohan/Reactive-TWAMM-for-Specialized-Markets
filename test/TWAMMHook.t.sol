@@ -189,8 +189,77 @@ contract TWAMMHookTest is Test {
         TWAMMHook.TWAMMOrder memory order = hook.getOrder(orderId);
         assertEq(order.owner, alice);
         assertEq(order.totalAmount, 100 ether);
+        assertEq(order.minOutputPerChunk, 0);
         assertTrue(order.active);
         assertFalse(order.cancelled);
+    }
+
+    function test_SubmitOrder_StoresMinOutputPerChunk() public {
+        vm.prank(address(poolManager));
+        hook.afterInitialize(address(this), poolKey, 0, 0);
+
+        vm.startPrank(alice);
+        tokenA.approve(address(hook), 100 ether);
+        bytes32 orderId = hook.submitTWAMMOrder(
+            poolKey,
+            100 ether,
+            10 minutes,
+            Currency.wrap(address(tokenA)),
+            Currency.wrap(address(tokenB)),
+            77 ether
+        );
+        vm.stopPrank();
+
+        TWAMMHook.TWAMMOrder memory order = hook.getOrder(orderId);
+        assertEq(order.minOutputPerChunk, 77 ether);
+    }
+
+    function test_RevertIf_SetPaused_NonOwner() public {
+        vm.prank(bob);
+        vm.expectRevert(TWAMMHook.TWAMMHook__OnlyOwner.selector);
+        hook.setPaused(true);
+    }
+
+    function test_RevertIf_SubmitWhenPaused() public {
+        vm.prank(address(poolManager));
+        hook.afterInitialize(address(this), poolKey, 0, 0);
+
+        hook.setPaused(true);
+
+        vm.startPrank(alice);
+        tokenA.approve(address(hook), 100 ether);
+        vm.expectRevert(TWAMMHook.TWAMMHook__Paused.selector);
+        hook.submitTWAMMOrder(
+            poolKey,
+            100 ether,
+            10 minutes,
+            Currency.wrap(address(tokenA)),
+            Currency.wrap(address(tokenB)),
+            0
+        );
+        vm.stopPrank();
+    }
+
+    function test_RevertIf_ExecuteWhenPaused() public {
+        vm.prank(address(poolManager));
+        hook.afterInitialize(address(this), poolKey, 0, 0);
+
+        vm.startPrank(alice);
+        tokenA.approve(address(hook), 100 ether);
+        bytes32 orderId = hook.submitTWAMMOrder(
+            poolKey,
+            100 ether,
+            10 minutes,
+            Currency.wrap(address(tokenA)),
+            Currency.wrap(address(tokenB)),
+            0
+        );
+        vm.stopPrank();
+
+        hook.setPaused(true);
+
+        vm.expectRevert(TWAMMHook.TWAMMHook__Paused.selector);
+        hook.executeTWAMMChunk(poolKey, orderId);
     }
 
     function test_CancelOrder() public {
