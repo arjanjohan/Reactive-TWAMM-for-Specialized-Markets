@@ -3,12 +3,15 @@ pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {ReactiveTWAMM} from "../src/ReactiveTWAMM.sol";
+import {ITWAMMHook} from "../src/interfaces/ITWAMMHook.sol";
 import {PoolKey} from "@uniswap/v4-core/types/PoolKey.sol";
 import {Currency} from "@uniswap/v4-core/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/interfaces/IHooks.sol";
 
 contract ReactiveTWAMMTest is Test {
     ReactiveTWAMM internal reactive;
+
+    event Callback(uint256 indexed chain_id, address indexed _contract, uint64 indexed gas_limit, bytes payload);
 
     address internal owner = address(this);
     address internal callback = address(0xBEEF);
@@ -52,6 +55,10 @@ contract ReactiveTWAMMTest is Test {
 
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = ORDER_ID;
+
+        bytes memory payload = abi.encodeWithSelector(ITWAMMHook.executeTWAMMChunk.selector, poolKey, ORDER_ID);
+        vm.expectEmit(true, true, true, true, address(reactive));
+        emit Callback(1301, targetHook, 1_200_000, payload);
 
         reactive.batchExecute(ids);
 

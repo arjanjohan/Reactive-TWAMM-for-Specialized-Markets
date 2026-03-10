@@ -7,8 +7,8 @@
 
 ## 2) Are you using Reactive in a real way or just a mock?
 - We are live on **Reactive Lasna** with real transactions (`subscribe`, `batchExecute`) and emitted automation events.
-- Current `_triggerExecution` is still scaffolded for callback transport abstraction.
-- This is intentional to keep the demo stable while proving deployment + automation path.
+- `_triggerExecution` now emits Reactive `Callback(chain_id, contract, gas_limit, payload)` with an encoded `executeTWAMMChunk(...)` payload.
+- This gives a real callback instruction path on Reactive side, with tx-linked evidence.
 
 ## 3) Can this move from scaffold to full cross-chain callback?
 Yes. The short path is:
