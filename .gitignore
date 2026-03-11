@@ -12,3 +12,6 @@ docs/
 
 # Dotenv file
 .env
+
+# Local internal notes (do not commit)
+internal-docs/
