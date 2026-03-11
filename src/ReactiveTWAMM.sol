@@ -88,6 +88,7 @@ contract ReactiveTWAMM {
     bytes32[] public activeOrderIds;
     mapping(bytes32 => uint256) public orderIndex;
     bool public cronSubscribed;
+    bool public vm;
 
     // ============ Modifiers ============
     modifier onlyReactiveCallback() {
@@ -105,10 +106,16 @@ contract ReactiveTWAMM {
         _;
     }
 
+    modifier rnOnly() {
+        require(!vm, "Reactive Network only");
+        _;
+    }
+
     // ============ Constructor ============
     constructor(address _reactiveCallbackAddress) {
         reactiveCallbackAddress = _reactiveCallbackAddress;
         owner = msg.sender;
+        _detectVm();
     }
 
     // ============ External Functions ============
@@ -124,25 +131,15 @@ contract ReactiveTWAMM {
         PoolKey calldata poolKey,
         bytes32 orderId
     ) external onlyOwner {
-        PoolId poolId = poolKey.toId();
-        
-        subscriptions[orderId] = Subscription({
-            targetHook: targetHook,
-            poolKey: poolKey,
-            orderId: orderId,
-            lastExecutionTime: 0,
-            active: true,
-            usePriceCondition: false,
-            priceFeed: address(0),
-            targetPrice: 0,
-            aboveTarget: false
-        });
-
-        orderIndex[orderId] = activeOrderIds.length;
-        activeOrderIds.push(orderId);
-
-        _ensureCronSubscribed();
-        emit Subscribed(poolId, orderId);
+        _storeSubscription(
+            targetHook,
+            poolKey,
+            orderId,
+            false,
+            address(0),
+            0,
+            false
+        );
     }
 
     /**
@@ -162,25 +159,15 @@ contract ReactiveTWAMM {
         uint256 targetPrice,
         bool aboveTarget
     ) external onlyOwner {
-        PoolId poolId = poolKey.toId();
-        
-        subscriptions[orderId] = Subscription({
-            targetHook: targetHook,
-            poolKey: poolKey,
-            orderId: orderId,
-            lastExecutionTime: 0,
-            active: true,
-            usePriceCondition: true,
-            priceFeed: priceFeed,
-            targetPrice: targetPrice,
-            aboveTarget: aboveTarget
-        });
-
-        orderIndex[orderId] = activeOrderIds.length;
-        activeOrderIds.push(orderId);
-
-        _ensureCronSubscribed();
-        emit Subscribed(poolId, orderId);
+        _storeSubscription(
+            targetHook,
+            poolKey,
+            orderId,
+            true,
+            priceFeed,
+            targetPrice,
+            aboveTarget
+        );
     }
 
     /**
@@ -286,7 +273,7 @@ contract ReactiveTWAMM {
         }
     }
 
-    function ensureCronSubscription() external onlyOwner {
+    function ensureCronSubscription() external onlyOwner rnOnly {
         _ensureCronSubscribed();
     }
 
@@ -330,31 +317,56 @@ contract ReactiveTWAMM {
         emit ExecutionTriggered(poolKey.toId(), orderId, block.timestamp);
     }
 
+    function _storeSubscription(
+        address targetHook,
+        PoolKey calldata poolKey,
+        bytes32 orderId,
+        bool usePriceCondition,
+        address priceFeed,
+        uint256 targetPrice,
+        bool aboveTarget
+    ) internal {
+        PoolId poolId = poolKey.toId();
+
+        subscriptions[orderId] = Subscription({
+            targetHook: targetHook,
+            poolKey: poolKey,
+            orderId: orderId,
+            lastExecutionTime: 0,
+            active: true,
+            usePriceCondition: usePriceCondition,
+            priceFeed: priceFeed,
+            targetPrice: targetPrice,
+            aboveTarget: aboveTarget
+        });
+
+        orderIndex[orderId] = activeOrderIds.length;
+        activeOrderIds.push(orderId);
+
+        emit Subscribed(poolId, orderId);
+    }
+
     function _ensureCronSubscribed() internal {
         if (cronSubscribed) return;
 
-        uint256 size;
-        assembly {
-            size := extcodesize(REACTIVE_SERVICE)
-        }
-
-        // In local/unit tests there is no Reactive system contract deployed.
-        if (size == 0) return;
-
-        try ISubscriptionService(REACTIVE_SERVICE).subscribe(
+        ISubscriptionService(REACTIVE_SERVICE).subscribe(
             block.chainid,
             REACTIVE_SERVICE,
             CRON10_TOPIC0,
             0,
             0,
             0
-        ) {
-            cronSubscribed = true;
-        } catch {
-            // Not in RN execution context (e.g., plain EVM script path).
-            // Keep manual execution paths available.
-            cronSubscribed = false;
+        );
+
+        cronSubscribed = true;
+    }
+
+    function _detectVm() internal {
+        uint256 size;
+        assembly {
+            size := extcodesize(REACTIVE_SERVICE)
         }
+        vm = size == 0;
     }
 
     // ============ Admin Functions ============
