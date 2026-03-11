@@ -12,7 +12,7 @@ import {TestToken} from "../src/TestToken.sol";
 
 contract SmokeTWAMM is Script {
     address constant POOL_MANAGER = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
-    address constant TWAMM_HOOK = 0x0E7849e4034146B37bb590c7E81D8BFAAAc210C0;
+    address constant TWAMM_HOOK = 0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0;
 
     uint24 constant FEE = 3000;
     int24 constant TICK_SPACING = 60;
@@ -75,8 +75,23 @@ contract SmokeTWAMM is Script {
         Currency tokenIn,
         Currency tokenOut
     ) internal returns (bytes32 orderId) {
-        // Legacy 5-arg signature currently deployed on Unichain hook:
-        // submitTWAMMOrder((...),uint256,uint256,address,address)
+        // Modern 6-arg signature: submitTWAMMOrder((...),uint256,uint256,address,address,uint256)
+        bytes memory modern = abi.encodeWithSelector(
+            TWAMMHook.submitTWAMMOrder.selector,
+            key,
+            amount,
+            duration,
+            tokenIn,
+            tokenOut,
+            0
+        );
+
+        (bool ok, bytes memory ret) = TWAMM_HOOK.call(modern);
+        if (ok && ret.length >= 32) {
+            return abi.decode(ret, (bytes32));
+        }
+
+        // Legacy 5-arg signature fallback for older deployments.
         bytes4 legacySelector = 0x24aacde0;
         bytes memory legacy = abi.encodeWithSelector(
             legacySelector,
@@ -87,8 +102,8 @@ contract SmokeTWAMM is Script {
             Currency.unwrap(tokenOut)
         );
 
-        (bool ok, bytes memory ret) = TWAMM_HOOK.call(legacy);
-        require(ok && ret.length >= 32, "submit failed (legacy)");
+        (ok, ret) = TWAMM_HOOK.call(legacy);
+        require(ok && ret.length >= 32, "submit failed (modern+legacy)");
         return abi.decode(ret, (bytes32));
     }
 

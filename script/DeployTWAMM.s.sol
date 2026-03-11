@@ -38,7 +38,7 @@ contract DeployTWAMM is Script {
         console2.log("Reactive Callback:", REACTIVE_CALLBACK_SEPOLIA);
         console2.log("");
 
-        bytes memory constructorArgs = abi.encode(IPoolManager(POOL_MANAGER_SEPOLIA));
+        bytes memory constructorArgs = abi.encode(IPoolManager(POOL_MANAGER_SEPOLIA), deployer);
         bytes memory initCode = abi.encodePacked(type(TWAMMHook).creationCode, constructorArgs);
 
         (bytes32 salt, address predictedHook) = _mineSalt(initCode, REQUIRED_FLAGS);
