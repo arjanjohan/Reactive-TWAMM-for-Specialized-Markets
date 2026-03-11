@@ -24,8 +24,10 @@ contract SmokeTWAMM is Script {
 
         vm.startBroadcast(pk);
 
-        TestToken tokenA = new TestToken("TWAMM Smoke A", "TSA");
-        TestToken tokenB = new TestToken("TWAMM Smoke B", "TSB");
+        bytes32 saltA = keccak256(abi.encodePacked("smoke-a", block.chainid, block.timestamp));
+        bytes32 saltB = keccak256(abi.encodePacked("smoke-b", block.chainid, block.timestamp));
+        TestToken tokenA = new TestToken{salt: saltA}("TWAMM Smoke A", "TSA");
+        TestToken tokenB = new TestToken{salt: saltB}("TWAMM Smoke B", "TSB");
 
         (address token0, address token1) = address(tokenA) < address(tokenB)
             ? (address(tokenA), address(tokenB))
@@ -49,13 +51,12 @@ contract SmokeTWAMM is Script {
         TestToken outToken = token0 == address(tokenA) ? tokenB : tokenA;
 
         inToken.approve(TWAMM_HOOK, 100 ether);
-        bytes32 orderId = TWAMMHook(TWAMM_HOOK).submitTWAMMOrder(
+        bytes32 orderId = _submitOrderCompat(
             key,
             100 ether,
             10 minutes,
             Currency.wrap(address(inToken)),
-            Currency.wrap(address(outToken)),
-            0
+            Currency.wrap(address(outToken))
         );
 
         vm.stopBroadcast();
@@ -65,6 +66,30 @@ contract SmokeTWAMM is Script {
         console2.log("Token B:", address(tokenB));
         console2.log("Order ID:");
         console2.logBytes32(orderId);
+    }
+
+    function _submitOrderCompat(
+        PoolKey memory key,
+        uint256 amount,
+        uint256 duration,
+        Currency tokenIn,
+        Currency tokenOut
+    ) internal returns (bytes32 orderId) {
+        // Legacy 5-arg signature currently deployed on Unichain hook:
+        // submitTWAMMOrder((...),uint256,uint256,address,address)
+        bytes4 legacySelector = 0x24aacde0;
+        bytes memory legacy = abi.encodeWithSelector(
+            legacySelector,
+            key,
+            amount,
+            duration,
+            Currency.unwrap(tokenIn),
+            Currency.unwrap(tokenOut)
+        );
+
+        (bool ok, bytes memory ret) = TWAMM_HOOK.call(legacy);
+        require(ok && ret.length >= 32, "submit failed (legacy)");
+        return abi.decode(ret, (bytes32));
     }
 
     function _loadPrivateKey() internal view returns (uint256) {

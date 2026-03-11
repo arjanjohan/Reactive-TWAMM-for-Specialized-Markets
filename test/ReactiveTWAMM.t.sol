@@ -56,7 +56,7 @@ contract ReactiveTWAMMTest is Test {
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = ORDER_ID;
 
-        bytes memory payload = abi.encodeWithSelector(ITWAMMHook.executeTWAMMChunk.selector, poolKey, ORDER_ID);
+        bytes memory payload = abi.encodeWithSelector(ITWAMMHook.executeTWAMMChunkReactive.selector, address(0), poolKey, ORDER_ID);
         vm.expectEmit(true, true, true, true, address(reactive));
         emit Callback(1301, targetHook, 1_200_000, payload);
 

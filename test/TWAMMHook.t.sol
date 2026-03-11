@@ -262,6 +262,14 @@ contract TWAMMHookTest is Test {
         hook.executeTWAMMChunk(poolKey, orderId);
     }
 
+    function test_RevertIf_ReactiveExecuteByWrongCaller() public {
+        hook.setReactiveCallbackConfig(address(0xBEEF), address(0xCAFE));
+
+        vm.prank(address(0xDEAD));
+        vm.expectRevert(TWAMMHook.TWAMMHook__UnauthorizedReactiveCallback.selector);
+        hook.executeTWAMMChunkReactive(address(0xCAFE), poolKey, bytes32(uint256(1)));
+    }
+
     function test_CancelOrder() public {
         // Enable TWAMM for the pool
         vm.prank(address(poolManager));

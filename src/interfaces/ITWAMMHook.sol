@@ -44,4 +44,5 @@ interface ITWAMMHook {
 
     function cancelTWAMMOrder(bytes32 orderId) external;
     function executeTWAMMChunk(PoolKey calldata key, bytes32 orderId) external;
+    function executeTWAMMChunkReactive(address reactiveRvmId, PoolKey calldata key, bytes32 orderId) external;
 }
