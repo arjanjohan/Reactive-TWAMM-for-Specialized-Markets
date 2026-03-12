@@ -59,6 +59,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     address public reactiveCallbackProxy;
     address public authorizedReactiveRvmId;
     mapping(bytes32 => ITWAMMHook.TWAMMOrder) public orders;
+    mapping(bytes32 => uint256) public override claimableOutput;
     mapping(PoolId => bool) public twammEnabled;
     mapping(PoolId => bytes32[]) public poolOrders;
 
@@ -96,6 +97,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
 
     event OrderCompleted(bytes32 indexed orderId);
     event OrderCancelled(bytes32 indexed orderId);
+    event OutputClaimed(bytes32 indexed orderId, address indexed owner, uint256 amountOut);
     event TWAMMEnabled(PoolId indexed poolId);
     event Paused(address account);
     event Unpaused(address account);
@@ -360,6 +362,21 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         _executeChunk(key, orderId);
     }
 
+    function claimTWAMMOutput(bytes32 orderId) external returns (uint256 amountOut) {
+        ITWAMMHook.TWAMMOrder storage order = orders[orderId];
+
+        if (order.owner == address(0)) revert TWAMMHook__OrderNotFound();
+        if (order.owner != msg.sender) revert TWAMMHook__NotOrderOwner();
+
+        amountOut = claimableOutput[orderId];
+        if (amountOut == 0) revert TWAMMHook__NoChunksToExecute();
+
+        claimableOutput[orderId] = 0;
+        IERC20(Currency.unwrap(order.tokenOut)).transfer(msg.sender, amountOut);
+
+        emit OutputClaimed(orderId, msg.sender, amountOut);
+    }
+
     // ============ View Functions ============
 
     function getOrder(bytes32 orderId) external view returns (ITWAMMHook.TWAMMOrder memory) {
@@ -484,11 +501,14 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         // Calculate amount out from delta
         int128 amountOut = zeroForOne ? delta.amount1() : delta.amount0();
 
+        uint256 chunkAmountOut = uint256(uint128(amountOut));
+
         order.executedChunks++;
         order.executedAmount += chunkAmount;
         order.lastExecutionTime = block.timestamp;
+        claimableOutput[orderId] += chunkAmountOut;
 
-        emit ChunkExecuted(orderId, order.executedChunks - 1, chunkAmount, uint128(amountOut));
+        emit ChunkExecuted(orderId, order.executedChunks - 1, chunkAmount, chunkAmountOut);
 
         _isExecutingChunk = false;
         delete _currentExecution;
