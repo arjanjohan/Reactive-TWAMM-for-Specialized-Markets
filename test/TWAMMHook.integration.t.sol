@@ -388,6 +388,74 @@ contract TWAMMHookIntegrationTest is Test {
         vm.stopPrank();
     }
 
+    function test_RevertIf_ExecuteTooSoon() public {
+        _addLiquidity(lp, 50_000 ether, 50_000 ether);
+
+        vm.startPrank(alice);
+        tokenA.approve(address(hook), 10 ether);
+        bytes32 orderId = hook.submitTWAMMOrder(
+            poolKey,
+            10 ether,
+            10 minutes,
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenA) : address(tokenB)),
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA)),
+            0
+        );
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 minutes);
+        hook.executeTWAMMChunk(poolKey, orderId);
+
+        vm.warp(block.timestamp + 10 seconds);
+        vm.expectRevert(TWAMMHook.TWAMMHook__ExecutionTooSoon.selector);
+        hook.executeTWAMMChunk(poolKey, orderId);
+    }
+
+    function test_RevertIf_ExecuteAfterCompletion() public {
+        _addLiquidity(lp, 50_000 ether, 50_000 ether);
+
+        vm.startPrank(alice);
+        tokenA.approve(address(hook), 10 ether);
+        bytes32 orderId = hook.submitTWAMMOrder(
+            poolKey,
+            10 ether,
+            10 minutes,
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenA) : address(tokenB)),
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA)),
+            0
+        );
+        vm.stopPrank();
+
+        for (uint256 i = 0; i < 10; i++) {
+            vm.warp(block.timestamp + 1 minutes);
+            hook.executeTWAMMChunk(poolKey, orderId);
+        }
+
+        vm.warp(block.timestamp + 1 minutes);
+        vm.expectRevert(TWAMMHook.TWAMMHook__OrderAlreadyCompleted.selector);
+        hook.executeTWAMMChunk(poolKey, orderId);
+    }
+
+    function test_RevertIf_ExecuteAfterCancel() public {
+        _addLiquidity(lp, 50_000 ether, 50_000 ether);
+
+        vm.startPrank(alice);
+        tokenA.approve(address(hook), 10 ether);
+        bytes32 orderId = hook.submitTWAMMOrder(
+            poolKey,
+            10 ether,
+            10 minutes,
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenA) : address(tokenB)),
+            Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA)),
+            0
+        );
+        hook.cancelTWAMMOrder(orderId);
+        vm.stopPrank();
+
+        vm.expectRevert(TWAMMHook.TWAMMHook__OrderAlreadyCompleted.selector);
+        hook.executeTWAMMChunk(poolKey, orderId);
+    }
+
     // ============ Helper Functions ============
 
     /**

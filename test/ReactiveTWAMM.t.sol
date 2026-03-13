@@ -80,4 +80,40 @@ contract ReactiveTWAMMTest is Test {
         ReactiveTWAMM.Subscription memory sub = reactive.getSubscription(ORDER_ID);
         assertFalse(sub.active);
     }
+
+    function test_RevertIf_Subscribe_NonOwner() public {
+        vm.prank(address(0xCAFE));
+        vm.expectRevert(bytes("Only owner"));
+        reactive.subscribe(targetHook, poolKey, ORDER_ID);
+    }
+
+    function test_RevertIf_Unsubscribe_InvalidOrder() public {
+        vm.expectRevert(ReactiveTWAMM.ReactiveTWAMM__InvalidOrder.selector);
+        reactive.unsubscribe(ORDER_ID);
+    }
+
+    function test_SubscribeWithPriceCondition_StoresValues() public {
+        reactive.subscribeWithPriceCondition(targetHook, poolKey, ORDER_ID, address(0x7777), 1234, true);
+
+        ReactiveTWAMM.Subscription memory sub = reactive.getSubscription(ORDER_ID);
+        assertTrue(sub.active);
+        assertTrue(sub.usePriceCondition);
+        assertEq(sub.priceFeed, address(0x7777));
+        assertEq(sub.targetPrice, 1234);
+        assertTrue(sub.aboveTarget);
+    }
+
+    function test_GetActiveOrders_Pagination() public {
+        bytes32 order2 = keccak256("order-2");
+        reactive.subscribe(targetHook, poolKey, ORDER_ID);
+        reactive.subscribe(targetHook, poolKey, order2);
+
+        bytes32[] memory first = reactive.getActiveOrders(0, 1);
+        assertEq(first.length, 1);
+        assertEq(first[0], ORDER_ID);
+
+        bytes32[] memory second = reactive.getActiveOrders(1, 10);
+        assertEq(second.length, 1);
+        assertEq(second[0], order2);
+    }
 }

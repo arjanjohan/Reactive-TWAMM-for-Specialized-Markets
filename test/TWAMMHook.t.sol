@@ -387,4 +387,138 @@ contract TWAMMHookTest is Test {
         assertEq(orders[0], orderId1);
         assertEq(orders[1], orderId2);
     }
+
+    function test_RevertIf_SubmitWithoutApproval() public {
+        vm.prank(address(poolManager));
+        hook.afterInitialize(address(this), poolKey, 0, 0);
+
+        vm.startPrank(alice);
+        vm.expectRevert(bytes("Insufficient allowance"));
+        hook.submitTWAMMOrder(
+            poolKey, 100 ether, 10 minutes, Currency.wrap(address(tokenA)), Currency.wrap(address(tokenB)), 0
+        );
+        vm.stopPrank();
+    }
+
+    function test_TransferOwnership_AndOnlyOwner() public {
+        hook.transferOwnership(bob);
+
+        vm.prank(alice);
+        vm.expectRevert(TWAMMHook.TWAMMHook__OnlyOwner.selector);
+        hook.setPaused(true);
+
+        vm.prank(bob);
+        hook.setPaused(true);
+        assertTrue(hook.paused());
+    }
+
+    function test_RevertIf_TransferOwnership_ZeroAddress() public {
+        vm.expectRevert(bytes("Invalid owner"));
+        hook.transferOwnership(address(0));
+    }
+
+    function test_RevertIf_SetReactiveCallbackConfig_NonOwner() public {
+        vm.prank(bob);
+        vm.expectRevert(TWAMMHook.TWAMMHook__OnlyOwner.selector);
+        hook.setReactiveCallbackConfig(address(0xBEEF), address(0xCAFE));
+    }
+
+    function test_SubmitOrder_MinDurationBoundary() public {
+        vm.prank(address(poolManager));
+        hook.afterInitialize(address(this), poolKey, 0, 0);
+
+        vm.startPrank(alice);
+        tokenA.approve(address(hook), 1 ether);
+        bytes32 orderId = hook.submitTWAMMOrder(
+            poolKey, 1 ether, 1 minutes, Currency.wrap(address(tokenA)), Currency.wrap(address(tokenB)), 0
+        );
+        vm.stopPrank();
+
+        (, uint256 total) = hook.getOrderProgress(orderId);
+        assertEq(total, 1);
+    }
+
+    function test_SubmitOrder_CapsChunksAtMaxChunks() public {
+        vm.prank(address(poolManager));
+        hook.afterInitialize(address(this), poolKey, 0, 0);
+
+        vm.startPrank(alice);
+        tokenA.approve(address(hook), 100 ether);
+        bytes32 orderId = hook.submitTWAMMOrder(
+            poolKey, 100 ether, 365 days, Currency.wrap(address(tokenA)), Currency.wrap(address(tokenB)), 0
+        );
+        vm.stopPrank();
+
+        (, uint256 total) = hook.getOrderProgress(orderId);
+        assertEq(total, 100);
+    }
+
+    function testFuzz_SubmitOrder_ValidRanges(uint128 rawAmount, uint32 rawDurationMinutes) public {
+        vm.prank(address(poolManager));
+        hook.afterInitialize(address(this), poolKey, 0, 0);
+
+        uint256 amount = bound(uint256(rawAmount), 1, 1000 ether);
+        uint256 durationMinutes = bound(uint256(rawDurationMinutes), 1, 10_000);
+        uint256 duration = durationMinutes * 1 minutes;
+
+        vm.startPrank(alice);
+        tokenA.approve(address(hook), amount);
+        bytes32 orderId =
+            hook.submitTWAMMOrder(poolKey, amount, duration, Currency.wrap(address(tokenA)), Currency.wrap(address(tokenB)), 0);
+        vm.stopPrank();
+
+        TWAMMHook.TWAMMOrder memory order = hook.getOrder(orderId);
+        assertEq(order.totalAmount, amount);
+        assertGe(order.totalChunks, 1);
+        assertLe(order.totalChunks, 100);
+        assertEq(tokenA.balanceOf(address(hook)), amount);
+    }
+
+    function test_RevertIf_BeforeInitialize_NotImplemented() public {
+        vm.expectRevert(TWAMMHook.HookNotImplemented.selector);
+        hook.beforeInitialize(address(this), poolKey, 0);
+    }
+
+    function test_RevertIf_BeforeSwap_NonPoolManager() public {
+        IPoolManager.SwapParams memory params =
+            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1, sqrtPriceLimitX96: 0});
+
+        vm.prank(alice);
+        vm.expectRevert(TWAMMHook.TWAMMHook__OnlyPoolManager.selector);
+        hook.beforeSwap(address(this), poolKey, params, "");
+    }
+
+    function test_RevertIf_AfterInitialize_NonPoolManager() public {
+        vm.prank(alice);
+        vm.expectRevert(TWAMMHook.TWAMMHook__OnlyPoolManager.selector);
+        hook.afterInitialize(address(this), poolKey, 0, 0);
+    }
+
+    function test_RevertIf_AfterSwap_NonPoolManager() public {
+        IPoolManager.SwapParams memory params =
+            IPoolManager.SwapParams({zeroForOne: true, amountSpecified: -1, sqrtPriceLimitX96: 0});
+
+        vm.prank(alice);
+        vm.expectRevert(TWAMMHook.TWAMMHook__OnlyPoolManager.selector);
+        hook.afterSwap(address(this), poolKey, params, BalanceDelta.wrap(0), "");
+    }
+
+    function test_RevertIf_ClaimOutput_OrderNotFound() public {
+        vm.prank(alice);
+        vm.expectRevert(TWAMMHook.TWAMMHook__OrderNotFound.selector);
+        hook.claimTWAMMOutput(bytes32(uint256(123)));
+    }
+
+    function test_RevertIf_Execute_OrderNotFound() public {
+        vm.expectRevert(TWAMMHook.TWAMMHook__OrderNotFound.selector);
+        hook.executeTWAMMChunk(poolKey, bytes32(uint256(999)));
+    }
+
+    function test_RevertIf_ReactiveExecute_OrderNotFound_WhenAuthorized() public {
+        hook.setReactiveCallbackConfig(address(0xBEEF), address(0xCAFE));
+
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(TWAMMHook.TWAMMHook__OrderNotFound.selector);
+        hook.executeTWAMMChunkReactive(address(0xCAFE), poolKey, bytes32(uint256(999)));
+    }
 }
