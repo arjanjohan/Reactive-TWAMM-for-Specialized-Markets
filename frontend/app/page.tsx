@@ -175,6 +175,7 @@ const Home: NextPage = () => {
     enabled: Boolean(lastOrderId),
     fromBlock: 0n,
     blocksBatchSize: 2000,
+    blockData: true,
   });
 
   const claimableOutput = useMemo(() => {
@@ -193,7 +194,15 @@ const Home: NextPage = () => {
   const canSubmitOrder = durationSeconds >= MIN_CHUNK_DURATION_SECONDS && Number(amountIn || 0) > 0;
 
   const chartPoints = useMemo(() => {
-    if (!chunkEvents?.length) return [] as { index: number; execPrice: number; trendPrice: number; chunkIn: string; chunkOut: string }[];
+    if (!chunkEvents?.length)
+      return [] as {
+        index: number;
+        ts: number;
+        execPrice: number;
+        trendPrice: number;
+        chunkIn: string;
+        chunkOut: string;
+      }[];
 
     const ordered = [...chunkEvents].sort((a, b) => {
       const ba = Number(a.blockNumber || 0n);
@@ -202,8 +211,16 @@ const Home: NextPage = () => {
       return Number(a.logIndex || 0) - Number(b.logIndex || 0);
     });
 
-    const points: { index: number; execPrice: number; trendPrice: number; chunkIn: string; chunkOut: string }[] = [];
+    const points: {
+      index: number;
+      ts: number;
+      execPrice: number;
+      trendPrice: number;
+      chunkIn: string;
+      chunkOut: string;
+    }[] = [];
     let ema = 0;
+
     ordered.forEach((evt, idx) => {
       const args = (evt as any).args || {};
       const rawIn = BigInt(args.amountIn ?? 0n);
@@ -214,8 +231,12 @@ const Home: NextPage = () => {
 
       ema = idx === 0 ? execPrice : ema * 0.6 + execPrice * 0.4;
 
+      const blockTs = Number((evt as any).blockData?.timestamp ?? 0n);
+      const ts = blockTs > 0 ? blockTs : Math.floor(Date.now() / 1000) + idx;
+
       points.push({
         index: idx + 1,
+        ts,
         execPrice,
         trendPrice: ema,
         chunkIn: amountInNum.toLocaleString(undefined, { maximumFractionDigits: 6 }),
@@ -226,25 +247,47 @@ const Home: NextPage = () => {
     return points;
   }, [chunkEvents, tokenIn.decimals, tokenOut.decimals]);
 
-  const svgPaths = useMemo(() => {
-    if (chartPoints.length < 2) return { exec: "", trend: "" };
+  const svgChart = useMemo(() => {
+    if (chartPoints.length < 2) {
+      return {
+        exec: "",
+        trend: "",
+        yMin: 0,
+        yMax: 0,
+        xStart: "",
+        xEnd: "",
+      };
+    }
+
     const width = 640;
     const height = 220;
-    const pad = 20;
-    const values = chartPoints.flatMap(p => [p.execPrice, p.trendPrice]);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const span = Math.max(max - min, 1e-9);
+    const padL = 52;
+    const padR = 20;
+    const padT = 16;
+    const padB = 28;
 
-    const toXY = (i: number, y: number) => {
-      const x = pad + (i / (chartPoints.length - 1)) * (width - pad * 2);
-      const yy = height - pad - ((y - min) / span) * (height - pad * 2);
+    const prices = chartPoints.flatMap(p => [p.execPrice, p.trendPrice]);
+    const yMin = Math.min(...prices);
+    const yMax = Math.max(...prices);
+    const ySpan = Math.max(yMax - yMin, 1e-9);
+
+    const minTs = Math.min(...chartPoints.map(p => p.ts));
+    const maxTs = Math.max(...chartPoints.map(p => p.ts));
+    const tSpan = Math.max(maxTs - minTs, 1);
+
+    const toXY = (ts: number, y: number) => {
+      const x = padL + ((ts - minTs) / tSpan) * (width - padL - padR);
+      const yy = height - padB - ((y - yMin) / ySpan) * (height - padT - padB);
       return `${x},${yy}`;
     };
 
-    const exec = chartPoints.map((p, i) => toXY(i, p.execPrice)).join(" ");
-    const trend = chartPoints.map((p, i) => toXY(i, p.trendPrice)).join(" ");
-    return { exec, trend };
+    const exec = chartPoints.map(p => toXY(p.ts, p.execPrice)).join(" ");
+    const trend = chartPoints.map(p => toXY(p.ts, p.trendPrice)).join(" ");
+
+    const xStart = new Date(minTs * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const xEnd = new Date(maxTs * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    return { exec, trend, yMin, yMax, xStart, xEnd };
   }, [chartPoints]);
 
   const submitAndSubscribe = async () => {
@@ -485,12 +528,22 @@ const Home: NextPage = () => {
           ) : (
             <div className="rounded-xl border border-base-300 bg-base-200 p-2 overflow-x-auto">
               <svg viewBox="0 0 640 220" className="w-full min-w-[640px] h-[220px]">
-                <polyline fill="none" stroke="#02bbf0" strokeWidth="3" points={svgPaths.exec} />
-                <polyline fill="none" stroke="#ff8f2e" strokeWidth="2" strokeDasharray="6 6" points={svgPaths.trend} />
+                <line x1="52" y1="16" x2="52" y2="192" stroke="currentColor" opacity="0.25" />
+                <line x1="52" y1="192" x2="620" y2="192" stroke="currentColor" opacity="0.25" />
+
+                <polyline fill="none" stroke="#02bbf0" strokeWidth="3" points={svgChart.exec} />
+                <polyline fill="none" stroke="#ff8f2e" strokeWidth="2" strokeDasharray="6 6" points={svgChart.trend} />
+
+                <text x="6" y="24" fontSize="10" fill="currentColor" opacity="0.7">{svgChart.yMax.toFixed(6)}</text>
+                <text x="6" y="192" fontSize="10" fill="currentColor" opacity="0.7">{svgChart.yMin.toFixed(6)}</text>
+                <text x="52" y="212" fontSize="10" fill="currentColor" opacity="0.7">{svgChart.xStart}</text>
+                <text x="560" y="212" fontSize="10" fill="currentColor" opacity="0.7">{svgChart.xEnd}</text>
               </svg>
-              <div className="mt-2 flex gap-4 text-xs">
+              <div className="mt-2 flex flex-wrap gap-4 text-xs">
                 <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#02bbf0]" />Execution price ({tokenOut.symbol}/{tokenIn.symbol})</span>
                 <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#ff8f2e]" />Trend price (EMA)</span>
+                <span className="text-base-content/70">X-axis: time</span>
+                <span className="text-base-content/70">Y-axis: price</span>
               </div>
             </div>
           )}
