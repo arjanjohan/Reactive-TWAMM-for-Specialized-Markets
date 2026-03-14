@@ -99,6 +99,14 @@ const Home: NextPage = () => {
     query: { enabled: Boolean(address) && tokenOut.address !== "0x0000000000000000000000000000000000000000" },
   });
 
+  const { data: tokenInAllowanceRaw } = useReadContract({
+    address: tokenIn.address,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address ? [address, ADDRS.hook] : undefined,
+    query: { enabled: Boolean(address) },
+  });
+
   const tokenInBalance = useMemo(() => {
     if (!tokenInBalanceRaw) return "0";
     return Number(formatUnits(tokenInBalanceRaw, tokenIn.decimals)).toLocaleString(undefined, { maximumFractionDigits: 4 });
@@ -108,6 +116,11 @@ const Home: NextPage = () => {
     if (!tokenOutBalanceRaw) return "0";
     return Number(formatUnits(tokenOutBalanceRaw, tokenOut.decimals)).toLocaleString(undefined, { maximumFractionDigits: 4 });
   }, [tokenOutBalanceRaw, tokenOut.decimals]);
+
+  const tokenInAllowance = useMemo(() => {
+    if (!tokenInAllowanceRaw) return 0n;
+    return tokenInAllowanceRaw;
+  }, [tokenInAllowanceRaw]);
 
   const durationSeconds = useMemo(() => {
     const n = Number(durationValue || 0);
@@ -238,6 +251,16 @@ const Home: NextPage = () => {
     setFlowStatus("Submitting order...");
     const amountBase = parseUnits(amountIn || "0", tokenIn.decimals);
     const minOutBase = parseUnits(minOutputPerChunk || "0", tokenOut.decimals);
+
+    if (tokenInAllowance < amountBase) {
+      setFlowStatus(`Approving ${tokenIn.symbol} for TWAMM hook...`);
+      await writeErc20({
+        address: tokenIn.address,
+        abi: mockErc20Abi,
+        functionName: "approve",
+        args: [ADDRS.hook, maxUint256],
+      });
+    }
 
     const submitHash = await writeTwamm({
       functionName: "submitTWAMMOrder",
