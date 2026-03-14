@@ -159,6 +159,7 @@ const Home: NextPage = () => {
   }, []);
 
   const { data: cronSubscribed } = useScaffoldReadContract({ contractName: "ReactiveTWAMM", functionName: "cronSubscribed" });
+  const { data: reactiveOwner } = useScaffoldReadContract({ contractName: "ReactiveTWAMM", functionName: "owner" });
   const { data: activeOrderCount } = useScaffoldReadContract({ contractName: "ReactiveTWAMM", functionName: "getActiveOrderCount" });
   const { data: claimableOutputRaw } = useScaffoldReadContract({
     contractName: "TWAMMHook",
@@ -341,8 +342,13 @@ const Home: NextPage = () => {
     setLastOrderId(parsedOrderId);
 
     if (!cronSubscribed) {
-      setFlowStatus("Ensuring Reactive cron subscription...");
-      await writeReactive({ functionName: "ensureCronSubscription", args: [] });
+      const isOwner = Boolean(address && reactiveOwner && address.toLowerCase() === String(reactiveOwner).toLowerCase());
+      if (isOwner) {
+        setFlowStatus("Ensuring Reactive cron subscription...");
+        await writeReactive({ functionName: "ensureCronSubscription", args: [] });
+      } else {
+        setFlowStatus("Cron not subscribed (owner-only). Continuing with subscribe...");
+      }
     }
 
     setFlowStatus("Subscribing order to Reactive...");
