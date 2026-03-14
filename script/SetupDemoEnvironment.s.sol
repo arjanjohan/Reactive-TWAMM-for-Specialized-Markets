@@ -33,7 +33,8 @@ contract SetupDemoEnvironment is Script {
         PoolModifyLiquidityTest liquidityRouter = new PoolModifyLiquidityTest(IPoolManager(POOL_MANAGER));
 
         // mint demo balances
-        usdc.mint(deployer, 2_000_000 * 10 ** 6);
+        // Large demo balances to support full-range liquidity despite decimal mismatch (USDC 6 vs REACT 18)
+        usdc.mint(deployer, 2_000_000_000_000_000_000 * 10 ** 6);
         react.mint(deployer, 2_000_000 * 10 ** 18);
 
         (address token0, address token1) = address(usdc) < address(react)
@@ -58,8 +59,8 @@ contract SetupDemoEnvironment is Script {
         usdc.approve(address(swapExecutor), type(uint256).max);
         react.approve(address(swapExecutor), type(uint256).max);
 
-        int24 tickLower = _floorToSpacing(-887272, TICK_SPACING);
-        int24 tickUpper = _floorToSpacing(887272, TICK_SPACING);
+        int24 tickLower = -887220;
+        int24 tickUpper = 887220;
 
         IPoolManager.ModifyLiquidityParams memory params = IPoolManager.ModifyLiquidityParams({
             tickLower: tickLower,

@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import type { NextPage } from "next";
-import { useAccount, usePublicClient, useReadContract } from "wagmi";
-import { decodeEventLog, erc20Abi, formatUnits, parseUnits } from "viem";
+import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
+import { decodeEventLog, erc20Abi, formatUnits, maxUint256, parseUnits } from "viem";
 import { ArrowPathIcon, ArrowsUpDownIcon, BoltIcon, ChartBarIcon, ClockIcon } from "@heroicons/react/24/outline";
 import twammHookAbi from "~~/contracts/abi/TWAMMHook.json";
 import {
@@ -24,12 +24,35 @@ const DURATION_MULTIPLIER: Record<DurationUnit, number> = {
 const ADDRS = {
   hook: "0x1eb187ec6240924c192230bfbbde6fdf13ce50c0" as const,
   reactive: "0x7087f17ecb3d5b90f83d561b27147c9fe67ee1e6" as const,
-  usdc: "0x0000000000000000000000000000000000000000" as const,
-  react: "0x0000000000000000000000000000000000000000" as const,
+  usdc: "0x7C85678a42c7D2f097F84C29888335EB0BdBDcc0" as const,
+  react: "0x38AdF72F712f125c07aBc811afcCe0686968E7FE" as const,
 };
 
 const MIN_CHUNK_DURATION_SECONDS = 60;
 const MAX_CHUNKS = 100;
+
+const mockErc20Abi = [
+  {
+    type: "function",
+    name: "mint",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
 
 const Home: NextPage = () => {
   const { address } = useAccount();
@@ -150,6 +173,7 @@ const Home: NextPage = () => {
   const { writeContractAsync: writeReactive, isMining: isReactiveMining } = useScaffoldWriteContract({
     contractName: "ReactiveTWAMM",
   });
+  const { writeContractAsync: writeErc20 } = useWriteContract();
 
   const canSubmitOrder = durationSeconds >= MIN_CHUNK_DURATION_SECONDS && Number(amountIn || 0) > 0;
 
@@ -264,6 +288,26 @@ const Home: NextPage = () => {
     await writeTwamm({ functionName: "claimTWAMMOutput", args: [lastOrderId] });
   };
 
+  const approveInputToken = async () => {
+    await writeErc20({
+      address: tokenIn.address,
+      abi: mockErc20Abi,
+      functionName: "approve",
+      args: [ADDRS.hook, maxUint256],
+    });
+  };
+
+  const mintDemo = async (token: "USDC" | "REACT") => {
+    if (!address) return;
+    const tokenCfg = token === "USDC" ? { address: ADDRS.usdc, decimals: 6, amount: "10000" } : { address: ADDRS.react, decimals: 18, amount: "10000" };
+    await writeErc20({
+      address: tokenCfg.address,
+      abi: mockErc20Abi,
+      functionName: "mint",
+      args: [address, parseUnits(tokenCfg.amount, tokenCfg.decimals)],
+    });
+  };
+
   return (
     <main className="mx-auto max-w-xl px-4 py-10 space-y-5">
       <section className="card bg-base-100 border border-primary/30 shadow-xl shadow-primary/10">
@@ -361,6 +405,18 @@ const Home: NextPage = () => {
               <p className="text-base-content/70">Per chunk</p>
               <p className="font-semibold">~{estimatedPerChunkOut}</p>
             </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <button className="btn btn-outline btn-sm" onClick={() => mintDemo("USDC")}>
+              Mint USDC
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={() => mintDemo("REACT")}>
+              Mint REACT
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={approveInputToken}>
+              Approve {tokenIn.symbol}
+            </button>
           </div>
 
           <button className="btn btn-primary w-full" disabled={!canSubmitOrder || isTwammMining || isReactiveMining} onClick={submitAndSubscribe}>
