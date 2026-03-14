@@ -11,6 +11,12 @@ import {IHooks} from "@uniswap/v4-core/interfaces/IHooks.sol";
 import {MockERC20} from "../src/MockERC20.sol";
 import {SimpleSwapExecutor} from "../src/SimpleSwapExecutor.sol";
 
+interface IReactiveTWAMMAdmin {
+    function owner() external view returns (address);
+    function cronSubscribed() external view returns (bool);
+    function ensureCronSubscription() external;
+}
+
 contract SetupDemoEnvironment is Script {
     // Unichain Sepolia pool manager
     address constant POOL_MANAGER = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
@@ -23,6 +29,7 @@ contract SetupDemoEnvironment is Script {
         uint256 pk = _loadPrivateKey();
         address deployer = vm.addr(pk);
         address hook = vm.envAddress("TWAMM_HOOK");
+        address reactive = vm.envAddress("REACTIVE_TWAMM");
 
         vm.startBroadcast(pk);
 
@@ -71,6 +78,15 @@ contract SetupDemoEnvironment is Script {
 
         liquidityRouter.modifyLiquidity(key, params, "");
 
+        // One-time Reactive cron bootstrap (owner-only): automate here so UI users don't need admin action.
+        IReactiveTWAMMAdmin reactiveAdmin = IReactiveTWAMMAdmin(reactive);
+        bool cron = reactiveAdmin.cronSubscribed();
+        if (!cron) {
+            require(reactiveAdmin.owner() == deployer, "deployer is not Reactive owner");
+            reactiveAdmin.ensureCronSubscription();
+            cron = reactiveAdmin.cronSubscribed();
+        }
+
         vm.stopBroadcast();
 
         console2.log("=== DEMO SETUP COMPLETE ===");
@@ -79,6 +95,8 @@ contract SetupDemoEnvironment is Script {
         console2.log("REACT:", address(react));
         console2.log("SWAP_EXECUTOR:", address(swapExecutor));
         console2.log("POOL_MANAGER:", POOL_MANAGER);
+        console2.log("REACTIVE_TWAMM:", reactive);
+        console2.log("cronSubscribed:", cron);
         console2.log("token0:", token0);
         console2.log("token1:", token1);
         console2.log("tickLower:", tickLower);
