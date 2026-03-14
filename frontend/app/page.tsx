@@ -65,6 +65,7 @@ const Home: NextPage = () => {
   const [minOutputPerChunk, setMinOutputPerChunk] = useState("0");
   const [lastOrderId, setLastOrderId] = useState<`0x${string}` | null>(null);
   const [flowStatus, setFlowStatus] = useState<string>("Idle");
+  const [windowSeconds, setWindowSeconds] = useState<number>(3600); // default 1h
 
   const tokenIn = useMemo(
     () =>
@@ -277,8 +278,17 @@ const Home: NextPage = () => {
     };
   }, [publicClient, poolId, poolKey]);
 
+  const filteredChartPoints = useMemo(() => {
+    if (chartPoints.length === 0) return [];
+    if (windowSeconds <= 0) return chartPoints;
+
+    const latestTs = chartPoints[chartPoints.length - 1]?.ts ?? Math.floor(Date.now() / 1000);
+    const minTs = latestTs - windowSeconds;
+    return chartPoints.filter(p => p.ts >= minTs);
+  }, [chartPoints, windowSeconds]);
+
   const svgChart = useMemo(() => {
-    if (chartPoints.length < 2) {
+    if (filteredChartPoints.length < 2) {
       return {
         exec: "",
         trend: "",
@@ -296,13 +306,13 @@ const Home: NextPage = () => {
     const padT = 16;
     const padB = 28;
 
-    const prices = chartPoints.flatMap(p => [p.execPrice, p.trendPrice]);
+    const prices = filteredChartPoints.flatMap(p => [p.execPrice, p.trendPrice]);
     const yMin = Math.min(...prices);
     const yMax = Math.max(...prices);
     const ySpan = Math.max(yMax - yMin, 1e-9);
 
-    const minTs = Math.min(...chartPoints.map(p => p.ts));
-    const maxTs = Math.max(...chartPoints.map(p => p.ts));
+    const minTs = Math.min(...filteredChartPoints.map(p => p.ts));
+    const maxTs = Math.max(...filteredChartPoints.map(p => p.ts));
     const tSpan = Math.max(maxTs - minTs, 1);
 
     const toXY = (ts: number, y: number) => {
@@ -311,14 +321,14 @@ const Home: NextPage = () => {
       return `${x},${yy}`;
     };
 
-    const exec = chartPoints.map(p => toXY(p.ts, p.execPrice)).join(" ");
-    const trend = chartPoints.map(p => toXY(p.ts, p.trendPrice)).join(" ");
+    const exec = filteredChartPoints.map(p => toXY(p.ts, p.execPrice)).join(" ");
+    const trend = filteredChartPoints.map(p => toXY(p.ts, p.trendPrice)).join(" ");
 
     const xStart = new Date(minTs * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     const xEnd = new Date(maxTs * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
     return { exec, trend, yMin, yMax, xStart, xEnd };
-  }, [chartPoints]);
+  }, [filteredChartPoints]);
 
   const submitAndSubscribe = async () => {
     setFlowStatus("Submitting order...");
@@ -562,8 +572,32 @@ const Home: NextPage = () => {
             <span className="text-xs text-base-content/60">auto-updates from pool swap events</span>
           </div>
 
-          {chartPoints.length < 2 ? (
-            <p className="text-sm text-base-content/70">No swap observations yet for this pool.</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-base-content/60">Range</span>
+            <button className={`btn btn-xs ${windowSeconds === 300 ? "btn-primary" : "btn-outline"}`} onClick={() => setWindowSeconds(300)}>5m</button>
+            <button className={`btn btn-xs ${windowSeconds === 900 ? "btn-primary" : "btn-outline"}`} onClick={() => setWindowSeconds(900)}>15m</button>
+            <button className={`btn btn-xs ${windowSeconds === 3600 ? "btn-primary" : "btn-outline"}`} onClick={() => setWindowSeconds(3600)}>1h</button>
+            <button className={`btn btn-xs ${windowSeconds === 14400 ? "btn-primary" : "btn-outline"}`} onClick={() => setWindowSeconds(14400)}>4h</button>
+            <button className={`btn btn-xs ${windowSeconds === 0 ? "btn-primary" : "btn-outline"}`} onClick={() => setWindowSeconds(0)}>all</button>
+
+            <div className="ml-auto flex gap-1">
+              <button
+                className="btn btn-xs btn-outline"
+                onClick={() => setWindowSeconds(prev => (prev === 0 ? 3600 : Math.max(60, Math.floor(prev / 2))))}
+              >
+                Zoom in
+              </button>
+              <button
+                className="btn btn-xs btn-outline"
+                onClick={() => setWindowSeconds(prev => (prev === 0 ? 0 : Math.min(86400, prev * 2)))}
+              >
+                Zoom out
+              </button>
+            </div>
+          </div>
+
+          {filteredChartPoints.length < 2 ? (
+            <p className="text-sm text-base-content/70">No swap observations in selected window.</p>
           ) : (
             <div className="rounded-xl border border-base-300 bg-base-200 p-2 overflow-x-auto">
               <svg viewBox="0 0 640 220" className="w-full min-w-[640px] h-[220px]">
@@ -599,7 +633,7 @@ const Home: NextPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {[...chartPoints].slice(-8).reverse().map(point => (
+                {[...filteredChartPoints].slice(-8).reverse().map(point => (
                   <tr key={point.index}>
                     <td>{point.index}</td>
                     <td>{new Date(point.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
