@@ -1,17 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { NextPage } from "next";
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
-import { decodeEventLog, erc20Abi, formatUnits, maxUint256, parseUnits } from "viem";
+import { decodeEventLog, encodeAbiParameters, erc20Abi, formatUnits, keccak256, maxUint256, parseAbiItem, parseUnits } from "viem";
 import { ArrowPathIcon, ArrowsUpDownIcon, BoltIcon, ChartBarIcon, ClockIcon } from "@heroicons/react/24/outline";
 import twammHookAbi from "~~/contracts/abi/TWAMMHook.json";
-import {
-  useScaffoldEventHistory,
-  useScaffoldReadContract,
-  useScaffoldWriteContract,
-  useTargetNetwork,
-} from "~~/hooks/scaffold-eth";
+import { useScaffoldReadContract, useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
 
 type DurationUnit = "minutes" | "hours" | "days";
 
@@ -30,6 +25,10 @@ const ADDRS = {
 
 const MIN_CHUNK_DURATION_SECONDS = 60;
 const MAX_CHUNKS = 100;
+const POOL_MANAGER = "0x00B036B58a818B1BC34d502D3fE730Db729e62AC" as const;
+const swapEvent = parseAbiItem(
+  "event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)",
+);
 
 const mockErc20Abi = [
   {
@@ -168,16 +167,6 @@ const Home: NextPage = () => {
     query: { enabled: Boolean(lastOrderId) },
   });
 
-  const { data: chunkEvents } = useScaffoldEventHistory({
-    contractName: "TWAMMHook",
-    eventName: "ChunkExecuted",
-    filters: lastOrderId ? { orderId: lastOrderId } : undefined,
-    watch: true,
-    enabled: Boolean(lastOrderId),
-    fromBlock: 0n,
-    blocksBatchSize: 2000,
-    blockData: true,
-  });
 
   const claimableOutput = useMemo(() => {
     if (!claimableOutputRaw) return "0";
@@ -194,59 +183,99 @@ const Home: NextPage = () => {
 
   const canSubmitOrder = durationSeconds >= MIN_CHUNK_DURATION_SECONDS && Number(amountIn || 0) > 0;
 
-  const chartPoints = useMemo(() => {
-    if (!chunkEvents?.length)
-      return [] as {
-        index: number;
-        ts: number;
-        execPrice: number;
-        trendPrice: number;
-        chunkIn: string;
-        chunkOut: string;
-      }[];
+  const poolId = useMemo(() => {
+    return keccak256(
+      encodeAbiParameters(
+        [
+          { type: "address" },
+          { type: "address" },
+          { type: "uint24" },
+          { type: "int24" },
+          { type: "address" },
+        ],
+        [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks],
+      ),
+    );
+  }, [poolKey]);
 
-    const ordered = [...chunkEvents].sort((a, b) => {
-      const ba = Number(a.blockNumber || 0n);
-      const bb = Number(b.blockNumber || 0n);
-      if (ba !== bb) return ba - bb;
-      return Number(a.logIndex || 0) - Number(b.logIndex || 0);
-    });
-
-    const points: {
+  const [chartPoints, setChartPoints] = useState<
+    {
       index: number;
       ts: number;
       execPrice: number;
       trendPrice: number;
       chunkIn: string;
       chunkOut: string;
-    }[] = [];
-    let ema = 0;
+    }[]
+  >([]);
 
-    ordered.forEach((evt, idx) => {
-      const args = (evt as any).args || {};
-      const rawIn = BigInt(args.amountIn ?? 0n);
-      const rawOut = BigInt(args.amountOut ?? 0n);
-      const amountInNum = Number(formatUnits(rawIn, tokenIn.decimals));
-      const amountOutNum = Number(formatUnits(rawOut, tokenOut.decimals));
-      const execPrice = amountInNum > 0 ? amountOutNum / amountInNum : 0;
+  useEffect(() => {
+    let cancelled = false;
 
-      ema = idx === 0 ? execPrice : ema * 0.6 + execPrice * 0.4;
+    const fetchSwapSeries = async () => {
+      if (!publicClient) return;
+      try {
+        const logs = await publicClient.getLogs({
+          address: POOL_MANAGER,
+          event: swapEvent,
+          args: { id: poolId },
+          fromBlock: 0n,
+          toBlock: "latest",
+        });
 
-      const blockTs = Number((evt as any).blockData?.timestamp ?? 0n);
-      const ts = blockTs > 0 ? blockTs : Math.floor(Date.now() / 1000) + idx;
+        const blocks = [...new Set(logs.map(l => l.blockNumber).filter(Boolean).map(b => Number(b)))];
+        const blockTs = new Map<number, number>();
+        await Promise.all(
+          blocks.map(async b => {
+            const block = await publicClient.getBlock({ blockNumber: BigInt(b) });
+            blockTs.set(b, Number(block.timestamp));
+          }),
+        );
 
-      points.push({
-        index: idx + 1,
-        ts,
-        execPrice,
-        trendPrice: ema,
-        chunkIn: amountInNum.toLocaleString(undefined, { maximumFractionDigits: 6 }),
-        chunkOut: amountOutNum.toLocaleString(undefined, { maximumFractionDigits: 6 }),
-      });
-    });
+        const dec0 = poolKey.currency0.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
+        const dec1 = poolKey.currency1.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
 
-    return points;
-  }, [chunkEvents, tokenIn.decimals, tokenOut.decimals]);
+        const points: { index: number; ts: number; execPrice: number; trendPrice: number; chunkIn: string; chunkOut: string }[] = [];
+        let ema = 0;
+
+        logs.forEach((log, idx) => {
+          const args = (log as any).args || {};
+          const sqrt = Number(args.sqrtPriceX96 || 0n);
+          if (!sqrt) return;
+
+          const p1Per0 = (sqrt / 2 ** 96) ** 2 * 10 ** (dec0 - dec1);
+          let reactUsd = p1Per0;
+
+          if (poolKey.currency0.toLowerCase() === ADDRS.usdc.toLowerCase()) {
+            reactUsd = p1Per0 > 0 ? 1 / p1Per0 : 0;
+          }
+
+          ema = points.length === 0 ? reactUsd : ema * 0.6 + reactUsd * 0.4;
+          const bn = Number(log.blockNumber || 0n);
+
+          points.push({
+            index: idx + 1,
+            ts: blockTs.get(bn) || Math.floor(Date.now() / 1000) + idx,
+            execPrice: reactUsd,
+            trendPrice: ema,
+            chunkIn: "-",
+            chunkOut: "-",
+          });
+        });
+
+        if (!cancelled) setChartPoints(points);
+      } catch {
+        if (!cancelled) setChartPoints([]);
+      }
+    };
+
+    fetchSwapSeries();
+    const id = setInterval(fetchSwapSeries, 10000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [publicClient, poolId, poolKey]);
 
   const svgChart = useMemo(() => {
     if (chartPoints.length < 2) {
@@ -529,12 +558,12 @@ const Home: NextPage = () => {
       <section className="card bg-base-100 border border-base-300">
         <div className="card-body space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="card-title text-lg">Live Price + Chunk Execution</h2>
-            <span className="text-xs text-base-content/60">auto-updates on new events</span>
+            <h2 className="card-title text-lg">Live Price (from swaps)</h2>
+            <span className="text-xs text-base-content/60">auto-updates from pool swap events</span>
           </div>
 
           {chartPoints.length < 2 ? (
-            <p className="text-sm text-base-content/70">Submit and execute at least 2 chunks to render chart lines.</p>
+            <p className="text-sm text-base-content/70">No swap observations yet for this pool.</p>
           ) : (
             <div className="rounded-xl border border-base-300 bg-base-200 p-2 overflow-x-auto">
               <svg viewBox="0 0 640 220" className="w-full min-w-[640px] h-[220px]">
@@ -550,7 +579,7 @@ const Home: NextPage = () => {
                 <text x="560" y="212" fontSize="10" fill="currentColor" opacity="0.7">{svgChart.xEnd}</text>
               </svg>
               <div className="mt-2 flex flex-wrap gap-4 text-xs">
-                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#02bbf0]" />Execution price ({tokenOut.symbol}/{tokenIn.symbol})</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#02bbf0]" />Execution price (USDC per REACT)</span>
                 <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#ff8f2e]" />Trend price (EMA)</span>
                 <span className="text-base-content/70">X-axis: time</span>
                 <span className="text-base-content/70">Y-axis: price</span>
@@ -563,20 +592,20 @@ const Home: NextPage = () => {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Chunk In ({tokenIn.symbol})</th>
-                  <th>Chunk Out ({tokenOut.symbol})</th>
+                  <th>Time</th>
                   <th>Execution Price</th>
                   <th>Trend Price</th>
+                  <th>Source</th>
                 </tr>
               </thead>
               <tbody>
                 {[...chartPoints].slice(-8).reverse().map(point => (
                   <tr key={point.index}>
                     <td>{point.index}</td>
-                    <td>{point.chunkIn}</td>
-                    <td>{point.chunkOut}</td>
+                    <td>{new Date(point.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
                     <td>{point.execPrice.toFixed(6)}</td>
                     <td>{point.trendPrice.toFixed(6)}</td>
+                    <td>Swap</td>
                   </tr>
                 ))}
               </tbody>
