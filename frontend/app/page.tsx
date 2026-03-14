@@ -24,8 +24,8 @@ const DURATION_MULTIPLIER: Record<DurationUnit, number> = {
 const ADDRS = {
   hook: "0x1eb187ec6240924c192230bfbbde6fdf13ce50c0" as const,
   reactive: "0x7087f17ecb3d5b90f83d561b27147c9fe67ee1e6" as const,
-  usdc: "0x7C85678a42c7D2f097F84C29888335EB0BdBDcc0" as const,
-  react: "0x38AdF72F712f125c07aBc811afcCe0686968E7FE" as const,
+  usdc: "0xc19445639A1B13F024924832267F27Cc868b6a62" as const,
+  react: "0xA5d9D845F4776289650d45EE9bbF5Ec98e203cBF" as const,
 };
 
 const MIN_CHUNK_DURATION_SECONDS = 60;
