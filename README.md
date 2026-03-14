@@ -14,6 +14,9 @@ Time-weighted automated market maker (TWAMM) hook for Uniswap v4 that uses React
 
 ## 📝 Project Status
 
+## TODO
+- [ ] Make TWAMM chunk cadence configurable (pool-level or bounded per-order parameter) instead of fully hardcoded `MIN_CHUNK_DURATION`, while preserving safe limits (`MAX_CHUNKS`, minimum duration guards).
+
 ## 🚀 Testnet Deployment (Unichain Sepolia + Reactive Lasna)
 
 ### Unichain Sepolia (destination)
