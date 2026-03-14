@@ -132,16 +132,18 @@ const Home: NextPage = () => {
     return (n / chunkCount).toLocaleString(undefined, { maximumFractionDigits: 6 });
   }, [amountIn, chunkCount]);
 
-  const poolKey = useMemo(
-    () => ({
-      currency0: tokenIn.address as `0x${string}`,
-      currency1: tokenOut.address as `0x${string}`,
+  const poolKey = useMemo(() => {
+    const [currency0, currency1] =
+      ADDRS.usdc.toLowerCase() < ADDRS.react.toLowerCase() ? [ADDRS.usdc, ADDRS.react] : [ADDRS.react, ADDRS.usdc];
+
+    return {
+      currency0: currency0 as `0x${string}`,
+      currency1: currency1 as `0x${string}`,
       fee: 3000,
       tickSpacing: 60,
       hooks: ADDRS.hook,
-    }),
-    [tokenIn.address, tokenOut.address],
-  );
+    };
+  }, []);
 
   const { data: cronSubscribed } = useScaffoldReadContract({ contractName: "ReactiveTWAMM", functionName: "cronSubscribed" });
   const { data: activeOrderCount } = useScaffoldReadContract({ contractName: "ReactiveTWAMM", functionName: "getActiveOrderCount" });
