@@ -6,7 +6,12 @@ import { useAccount, usePublicClient, useReadContract } from "wagmi";
 import { decodeEventLog, erc20Abi, formatUnits, parseUnits } from "viem";
 import { ArrowPathIcon, ArrowsUpDownIcon, BoltIcon, ChartBarIcon, ClockIcon } from "@heroicons/react/24/outline";
 import twammHookAbi from "~~/contracts/abi/TWAMMHook.json";
-import { useScaffoldReadContract, useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import {
+  useScaffoldEventHistory,
+  useScaffoldReadContract,
+  useScaffoldWriteContract,
+  useTargetNetwork,
+} from "~~/hooks/scaffold-eth";
 
 type DurationUnit = "minutes" | "hours" | "days";
 
@@ -124,6 +129,16 @@ const Home: NextPage = () => {
     query: { enabled: Boolean(lastOrderId) },
   });
 
+  const { data: chunkEvents } = useScaffoldEventHistory({
+    contractName: "TWAMMHook",
+    eventName: "ChunkExecuted",
+    filters: lastOrderId ? { orderId: lastOrderId } : undefined,
+    watch: true,
+    enabled: Boolean(lastOrderId),
+    fromBlock: 0n,
+    blocksBatchSize: 2000,
+  });
+
   const claimableOutput = useMemo(() => {
     if (!claimableOutputRaw) return "0";
     return Number(formatUnits(claimableOutputRaw as bigint, tokenOut.decimals)).toLocaleString(undefined, {
@@ -137,6 +152,61 @@ const Home: NextPage = () => {
   });
 
   const canSubmitOrder = durationSeconds >= MIN_CHUNK_DURATION_SECONDS && Number(amountIn || 0) > 0;
+
+  const chartPoints = useMemo(() => {
+    if (!chunkEvents?.length) return [] as { index: number; execPrice: number; trendPrice: number; chunkIn: string; chunkOut: string }[];
+
+    const ordered = [...chunkEvents].sort((a, b) => {
+      const ba = Number(a.blockNumber || 0n);
+      const bb = Number(b.blockNumber || 0n);
+      if (ba !== bb) return ba - bb;
+      return Number(a.logIndex || 0) - Number(b.logIndex || 0);
+    });
+
+    const points: { index: number; execPrice: number; trendPrice: number; chunkIn: string; chunkOut: string }[] = [];
+    let ema = 0;
+    ordered.forEach((evt, idx) => {
+      const args = (evt as any).args || {};
+      const rawIn = BigInt(args.amountIn ?? 0n);
+      const rawOut = BigInt(args.amountOut ?? 0n);
+      const amountInNum = Number(formatUnits(rawIn, tokenIn.decimals));
+      const amountOutNum = Number(formatUnits(rawOut, tokenOut.decimals));
+      const execPrice = amountInNum > 0 ? amountOutNum / amountInNum : 0;
+
+      ema = idx === 0 ? execPrice : ema * 0.6 + execPrice * 0.4;
+
+      points.push({
+        index: idx + 1,
+        execPrice,
+        trendPrice: ema,
+        chunkIn: amountInNum.toLocaleString(undefined, { maximumFractionDigits: 6 }),
+        chunkOut: amountOutNum.toLocaleString(undefined, { maximumFractionDigits: 6 }),
+      });
+    });
+
+    return points;
+  }, [chunkEvents, tokenIn.decimals, tokenOut.decimals]);
+
+  const svgPaths = useMemo(() => {
+    if (chartPoints.length < 2) return { exec: "", trend: "" };
+    const width = 640;
+    const height = 220;
+    const pad = 20;
+    const values = chartPoints.flatMap(p => [p.execPrice, p.trendPrice]);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = Math.max(max - min, 1e-9);
+
+    const toXY = (i: number, y: number) => {
+      const x = pad + (i / (chartPoints.length - 1)) * (width - pad * 2);
+      const yy = height - pad - ((y - min) / span) * (height - pad * 2);
+      return `${x},${yy}`;
+    };
+
+    const exec = chartPoints.map((p, i) => toXY(i, p.execPrice)).join(" ");
+    const trend = chartPoints.map((p, i) => toXY(i, p.trendPrice)).join(" ");
+    return { exec, trend };
+  }, [chartPoints]);
 
   const submitAndSubscribe = async () => {
     setFlowStatus("Submitting order...");
@@ -319,6 +389,55 @@ const Home: NextPage = () => {
           <p className="text-xs text-base-content/60">
             Reactive should execute chunks automatically after subscribe. Manual execute remains as fallback for demo control.
           </p>
+        </div>
+      </section>
+
+      <section className="card bg-base-100 border border-base-300">
+        <div className="card-body space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="card-title text-lg">Live Price + Chunk Execution</h2>
+            <span className="text-xs text-base-content/60">auto-updates on new events</span>
+          </div>
+
+          {chartPoints.length < 2 ? (
+            <p className="text-sm text-base-content/70">Submit and execute at least 2 chunks to render chart lines.</p>
+          ) : (
+            <div className="rounded-xl border border-base-300 bg-base-200 p-2 overflow-x-auto">
+              <svg viewBox="0 0 640 220" className="w-full min-w-[640px] h-[220px]">
+                <polyline fill="none" stroke="#02bbf0" strokeWidth="3" points={svgPaths.exec} />
+                <polyline fill="none" stroke="#ff8f2e" strokeWidth="2" strokeDasharray="6 6" points={svgPaths.trend} />
+              </svg>
+              <div className="mt-2 flex gap-4 text-xs">
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#02bbf0]" />Execution price ({tokenOut.symbol}/{tokenIn.symbol})</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#ff8f2e]" />Trend price (EMA)</span>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-x-auto">
+            <table className="table table-xs">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Chunk In ({tokenIn.symbol})</th>
+                  <th>Chunk Out ({tokenOut.symbol})</th>
+                  <th>Execution Price</th>
+                  <th>Trend Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...chartPoints].slice(-8).reverse().map(point => (
+                  <tr key={point.index}>
+                    <td>{point.index}</td>
+                    <td>{point.chunkIn}</td>
+                    <td>{point.chunkOut}</td>
+                    <td>{point.execPrice.toFixed(6)}</td>
+                    <td>{point.trendPrice.toFixed(6)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
     </main>
