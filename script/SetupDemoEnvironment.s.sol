@@ -78,14 +78,13 @@ contract SetupDemoEnvironment is Script {
 
         liquidityRouter.modifyLiquidity(key, params, "");
 
-        // One-time Reactive cron bootstrap (owner-only): automate here so UI users don't need admin action.
+        // Cron subscription lives on Reactive chain context. Keep Unichain setup deterministic
+        // and non-failing by only reading status here.
         IReactiveTWAMMAdmin reactiveAdmin = IReactiveTWAMMAdmin(reactive);
-        bool cron = reactiveAdmin.cronSubscribed();
-        if (!cron) {
-            require(reactiveAdmin.owner() == deployer, "deployer is not Reactive owner");
-            reactiveAdmin.ensureCronSubscription();
-            cron = reactiveAdmin.cronSubscribed();
-        }
+        bool cron = false;
+        try reactiveAdmin.cronSubscribed() returns (bool c) {
+            cron = c;
+        } catch {}
 
         vm.stopBroadcast();
 

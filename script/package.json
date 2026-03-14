@@ -1,0 +1,12 @@
+{
+  "name": "twamm-demo-scripts",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "dependencies": {
+    "viem": "^2.39.0"
+  },
+  "scripts": {
+    "arb": "node arb_bot.mjs"
+  }
+}
