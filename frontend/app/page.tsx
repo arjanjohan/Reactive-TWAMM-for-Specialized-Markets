@@ -37,6 +37,7 @@ const Home: NextPage = () => {
   const [durationUnit, setDurationUnit] = useState<DurationUnit>("minutes");
   const [minOutputPerChunk, setMinOutputPerChunk] = useState("0");
   const [lastOrderId, setLastOrderId] = useState<`0x${string}` | null>(null);
+  const [flowStatus, setFlowStatus] = useState<string>("Idle");
 
   const tokenIn = useMemo(
     () =>
@@ -138,6 +139,7 @@ const Home: NextPage = () => {
   const canSubmitOrder = durationSeconds >= MIN_CHUNK_DURATION_SECONDS && Number(amountIn || 0) > 0;
 
   const submitAndSubscribe = async () => {
+    setFlowStatus("Submitting order...");
     const amountBase = parseUnits(amountIn || "0", tokenIn.decimals);
     const minOutBase = parseUnits(minOutputPerChunk || "0", tokenOut.decimals);
 
@@ -146,8 +148,12 @@ const Home: NextPage = () => {
       args: [poolKey, amountBase, BigInt(durationSeconds), tokenIn.address as `0x${string}`, tokenOut.address as `0x${string}`, minOutBase],
     });
 
+    setFlowStatus("Waiting for tx receipt...");
     const receipt = await publicClient?.waitForTransactionReceipt({ hash: submitHash });
-    if (!receipt) return;
+    if (!receipt) {
+      setFlowStatus("No receipt found");
+      return;
+    }
 
     let parsedOrderId: `0x${string}` | null = null;
     for (const log of receipt.logs) {
@@ -162,14 +168,20 @@ const Home: NextPage = () => {
       }
     }
 
-    if (!parsedOrderId) return;
+    if (!parsedOrderId) {
+      setFlowStatus("Order submitted, but orderId not found in logs");
+      return;
+    }
     setLastOrderId(parsedOrderId);
 
     if (!cronSubscribed) {
+      setFlowStatus("Ensuring Reactive cron subscription...");
       await writeReactive({ functionName: "ensureCronSubscription", args: [] });
     }
 
+    setFlowStatus("Subscribing order to Reactive...");
     await writeReactive({ functionName: "subscribe", args: [ADDRS.hook, poolKey, parsedOrderId] });
+    setFlowStatus("Subscribed ✅");
   };
 
   const executeManual = async () => {
@@ -292,6 +304,7 @@ const Home: NextPage = () => {
           <div className="text-sm">
             <p className="text-base-content/70">Latest order</p>
             <p className="font-mono break-all">{lastOrderId || "— submit order first —"}</p>
+            <p className="text-xs text-base-content/60 mt-1">Flow status: {flowStatus}</p>
           </div>
 
           <div className="flex gap-2">
