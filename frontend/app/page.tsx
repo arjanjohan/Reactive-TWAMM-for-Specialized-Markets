@@ -297,12 +297,16 @@ const Home: NextPage = () => {
 
     if (tokenInAllowance < amountBase) {
       setFlowStatus(`Approving ${tokenIn.symbol} for TWAMM hook...`);
-      await writeErc20({
+      const approveHash = await writeErc20({
         address: tokenIn.address,
         abi: mockErc20Abi,
         functionName: "approve",
         args: [ADDRS.hook, maxUint256],
       });
+      if (publicClient) {
+        setFlowStatus("Waiting for approve confirmation...");
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      }
     }
 
     const submitHash = await writeTwamm({
