@@ -11,8 +11,8 @@ import {TWAMMHook} from "../src/TWAMMHook.sol";
 import {TestToken} from "../src/TestToken.sol";
 
 contract SmokeTWAMM is Script {
-    address constant POOL_MANAGER = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
-    address constant TWAMM_HOOK = 0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0;
+    address constant DEFAULT_POOL_MANAGER = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
+    address internal hookAddr;
 
     uint24 constant FEE = 3000;
     int24 constant TICK_SPACING = 60;
@@ -21,6 +21,8 @@ contract SmokeTWAMM is Script {
     function run() external {
         uint256 pk = _loadPrivateKey();
         address deployer = vm.addr(pk);
+        address poolManager = _envAddressOr("UNICHAIN_POOL_MANAGER", DEFAULT_POOL_MANAGER);
+        hookAddr = vm.envAddress("TWAMM_HOOK");
 
         vm.startBroadcast(pk);
 
@@ -38,10 +40,10 @@ contract SmokeTWAMM is Script {
             currency1: Currency.wrap(token1),
             fee: FEE,
             tickSpacing: TICK_SPACING,
-            hooks: IHooks(TWAMM_HOOK)
+            hooks: IHooks(hookAddr)
         });
 
-        IPoolManager(POOL_MANAGER).initialize(key, SQRT_PRICE_X96);
+        IPoolManager(poolManager).initialize(key, SQRT_PRICE_X96);
 
         tokenA.mint(deployer, 1_000 ether);
         tokenB.mint(deployer, 1_000 ether);
@@ -50,7 +52,7 @@ contract SmokeTWAMM is Script {
         TestToken inToken = token0 == address(tokenA) ? tokenA : tokenB;
         TestToken outToken = token0 == address(tokenA) ? tokenB : tokenA;
 
-        inToken.approve(TWAMM_HOOK, 100 ether);
+        inToken.approve(hookAddr, 100 ether);
         bytes32 orderId = _submitOrderCompat(
             key,
             100 ether,
@@ -86,7 +88,7 @@ contract SmokeTWAMM is Script {
             0
         );
 
-        (bool ok, bytes memory ret) = TWAMM_HOOK.call(modern);
+        (bool ok, bytes memory ret) = hookAddr.call(modern);
         if (ok && ret.length >= 32) {
             return abi.decode(ret, (bytes32));
         }
@@ -102,9 +104,17 @@ contract SmokeTWAMM is Script {
             Currency.unwrap(tokenOut)
         );
 
-        (ok, ret) = TWAMM_HOOK.call(legacy);
+        (ok, ret) = hookAddr.call(legacy);
         require(ok && ret.length >= 32, "submit failed (modern+legacy)");
         return abi.decode(ret, (bytes32));
+    }
+
+    function _envAddressOr(string memory key, address fallbackAddr) internal view returns (address) {
+        try vm.envAddress(key) returns (address a) {
+            return a;
+        } catch {
+            return fallbackAddr;
+        }
     }
 
     function _loadPrivateKey() internal view returns (uint256) {

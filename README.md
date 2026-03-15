@@ -145,6 +145,29 @@ forge test
 forge test -vv
 ```
 
+## 📍 Single Source of Truth for Addresses
+
+All deployed addresses now live in:
+
+- `deployments/addresses.json`
+
+Sync generated consumers after any address change:
+
+```bash
+node script/sync_addresses.mjs
+```
+
+This updates:
+
+- `.env.addresses` (for Foundry scripts)
+- `frontend/app/addresses.ts` (for frontend)
+
+Recommended script usage:
+
+```bash
+set -a; source .env; source .env.addresses; set +a
+```
+
 ---
 
 ## 📁 Project Structure

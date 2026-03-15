@@ -7,6 +7,7 @@ import { decodeEventLog, encodeAbiParameters, erc20Abi, formatUnits, keccak256, 
 import { ArrowPathIcon, ArrowsUpDownIcon, BoltIcon, ChartBarIcon, ClockIcon } from "@heroicons/react/24/outline";
 import twammHookAbi from "~~/contracts/abi/TWAMMHook.json";
 import { useScaffoldReadContract, useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { ADDRS, POOL_MANAGER } from "./addresses";
 
 type DurationUnit = "minutes" | "hours" | "days";
 
@@ -16,16 +17,8 @@ const DURATION_MULTIPLIER: Record<DurationUnit, number> = {
   days: 86400,
 };
 
-const ADDRS = {
-  hook: "0x1eb187ec6240924c192230bfbbde6fdf13ce50c0" as const,
-  reactive: "0x7087f17ecb3d5b90f83d561b27147c9fe67ee1e6" as const,
-  usdc: "0xc19445639A1B13F024924832267F27Cc868b6a62" as const,
-  react: "0xA5d9D845F4776289650d45EE9bbF5Ec98e203cBF" as const,
-};
-
 const MIN_CHUNK_DURATION_SECONDS = 60;
 const MAX_CHUNKS = 100;
-const POOL_MANAGER = "0x00B036B58a818B1BC34d502D3fE730Db729e62AC" as const;
 const swapEvent = parseAbiItem(
   "event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)",
 );
