@@ -322,7 +322,7 @@ const Home: NextPage = () => {
     return { exec, trend, yMin, yMax, xStart, xEnd };
   }, [filteredChartPoints]);
 
-  const submitAndSubscribe = async () => {
+  const submitOrder = async () => {
     setFlowStatus("Submitting order...");
     const amountBase = parseUnits(amountIn || "0", tokenIn.decimals);
     const minOutBase = parseUnits(minOutputPerChunk || "0", tokenOut.decimals);
@@ -339,7 +339,7 @@ const Home: NextPage = () => {
         setFlowStatus("Waiting for approve confirmation...");
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
       }
-      setFlowStatus(`Approval confirmed. Click Submit again to send TWAMM order.`);
+      setFlowStatus(`Approval confirmed. Click Submit Order again.`);
       return;
     }
 
@@ -373,9 +373,13 @@ const Home: NextPage = () => {
       return;
     }
     setLastOrderId(parsedOrderId);
+    setFlowStatus("Order submitted ✅ Now click Subscribe.");
+  };
 
+  const subscribeLastOrder = async () => {
+    if (!lastOrderId) return;
     setFlowStatus("Subscribing order to Reactive...");
-    await writeReactive({ functionName: "subscribe", args: [ADDRS.hook, poolKey, parsedOrderId] });
+    await writeReactive({ functionName: "subscribe", args: [ADDRS.hook, poolKey, lastOrderId] });
     setFlowStatus("Subscribed ✅");
   };
 
@@ -520,9 +524,14 @@ const Home: NextPage = () => {
             </button>
           </div>
 
-          <button className="btn btn-primary w-full" disabled={!canSubmitOrder || isTwammMining || isReactiveMining} onClick={submitAndSubscribe}>
-            <BoltIcon className="h-4 w-4" /> Submit & Subscribe
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button className="btn btn-primary w-full" disabled={!canSubmitOrder || isTwammMining || isReactiveMining} onClick={submitOrder}>
+              <BoltIcon className="h-4 w-4" /> Submit Order
+            </button>
+            <button className="btn btn-secondary w-full" disabled={!lastOrderId || isReactiveMining} onClick={subscribeLastOrder}>
+              <BoltIcon className="h-4 w-4" /> Subscribe Order
+            </button>
+          </div>
         </div>
       </section>
 
