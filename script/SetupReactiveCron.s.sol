@@ -17,7 +17,7 @@ contract SetupReactiveCron is Script {
     function run() external {
         uint256 pk = _loadPrivateKey();
         address signer = vm.addr(pk);
-        address reactive = vm.envAddress("REACTIVE_TWAMM");
+        address reactive = _loadReactiveAddress();
 
         IReactiveTWAMMOwner r = IReactiveTWAMMOwner(reactive);
 
@@ -39,6 +39,15 @@ contract SetupReactiveCron is Script {
         console2.log("owner:", owner);
         console2.log("cronSubscribed(before):", beforeState);
         console2.log("cronSubscribed(after):", afterState);
+    }
+
+    function _loadReactiveAddress() internal view returns (address) {
+        // Prefer Lasna-specific var to avoid accidental Unichain address usage.
+        try vm.envAddress("LASNA_REACTIVE_TWAMM") returns (address a) {
+            return a;
+        } catch {
+            return vm.envAddress("REACTIVE_TWAMM");
+        }
     }
 
     function _loadPrivateKey() internal view returns (uint256) {
