@@ -4,9 +4,9 @@
 export const ADDRS = {
   hook: "0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0" as const,
   reactive: "0x7087f17ecb3d5b90f83d561b27147c9fe67ee1e6" as const,
-  usdc: "0xfCf3d3FAB663Fb72C15a7bC92Fd03C2d606133C8" as const,
-  react: "0x399262A45EdE70B1E4dA32924C0182a2F2A0Ff21" as const,
-  swapExecutor: "0xDEcFFB8fEE154a791e763656d37A63323bCdE096" as const,
+  usdc: "0x22df620c7e43A131Eec8E7e38266E89D982D68C0" as const,
+  react: "0x2E43fdab320d4668e6F34C4C99fB0812C49396E2" as const,
+  swapExecutor: "0xad09688c4287BB18dDB6ee5d332aaA9B00Fa4427" as const,
 };
 
 export const POOL_MANAGER = "0x00B036B58a818B1BC34d502D3fE730Db729e62AC" as const;

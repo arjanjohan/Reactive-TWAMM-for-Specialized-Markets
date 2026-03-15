@@ -30,9 +30,10 @@ const CFG = {
   botPk: process.env.BOT_PK || process.env.PRIVATE_KEY,
 
   twammHook: process.env.TWAMM_HOOK || "0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0",
-  swapExecutor: process.env.SWAP_EXECUTOR || "0x193B245198db2E06aEC05539413C665CF5885960",
-  usdc: process.env.USDC || "0xc19445639A1B13F024924832267F27Cc868b6a62",
-  react: process.env.REACT_TOKEN || "0xA5d9D845F4776289650d45EE9bbF5Ec98e203cBF",
+  swapExecutor:
+    process.env.SWAP_EXECUTOR || process.env.SWAP_EXECUTOR_ADDRESS || "0x193B245198db2E06aEC05539413C665CF5885960",
+  usdc: process.env.USDC || process.env.USDC_ADDRESS || "0xc19445639A1B13F024924832267F27Cc868b6a62",
+  react: process.env.REACT_TOKEN || process.env.REACT_ADDRESS || "0xA5d9D845F4776289650d45EE9bbF5Ec98e203cBF",
 
   fee: 3000,
   tickSpacing: 60,
