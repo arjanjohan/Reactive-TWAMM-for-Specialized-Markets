@@ -6,15 +6,29 @@ import {PoolKey} from "@uniswap/v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/types/PoolId.sol";
 
 interface ISubscriptionService {
-    function subscribe(uint256 chain_id, address _contract, uint256 topic_0, uint256 topic_1, uint256 topic_2, uint256 topic_3) external;
-    function unsubscribe(uint256 chain_id, address _contract, uint256 topic_0, uint256 topic_1, uint256 topic_2, uint256 topic_3) external;
+    function subscribe(
+        uint256 chain_id,
+        address _contract,
+        uint256 topic_0,
+        uint256 topic_1,
+        uint256 topic_2,
+        uint256 topic_3
+    ) external;
+    function unsubscribe(
+        uint256 chain_id,
+        address _contract,
+        uint256 topic_0,
+        uint256 topic_1,
+        uint256 topic_2,
+        uint256 topic_3
+    ) external;
 }
 
 /**
  * @title ReactiveTWAMM
  * @notice Reactive Network contract that monitors and triggers TWAMM execution
  * @dev This contract runs on Reactive Network and calls back to Unichain
- * 
+ *
  * Reactive Network Integration:
  * - Monitors time intervals for chunk execution
  * - Can monitor price conditions on other chains (Base, Arbitrum)
@@ -25,9 +39,9 @@ contract ReactiveTWAMM {
 
     uint256 public constant UNICHAIN_SEPOLIA_CHAIN_ID = 1301;
     uint64 public constant CALLBACK_GAS_LIMIT = 1_200_000;
-    address public constant REACTIVE_SERVICE = 0x0000000000000000000000000000000000fffFfF;
 
-    // Cron10 event topic from Reactive docs (~1 min cadence)
+    uint256 public constant REACTIVE_IGNORE = 0xa65f96fc951c35ead38878e0f0b7a3c744a6f5ccc1476b313353ce31712313ad;
+    address public constant REACTIVE_SERVICE = 0x0000000000000000000000000000000000fffFfF;
     uint256 public constant CRON10_TOPIC0 = 0x04463f7c1651e6b9774d7f85c85bb94654e3c46ca79b0c16fb16d4183307b687;
 
     // ============ Errors ============
@@ -77,19 +91,16 @@ contract ReactiveTWAMM {
     // ============ State ============
     // Reactive Network callback address (set by Reactive Network)
     address public immutable reactiveCallbackAddress;
-    
     // Owner/admin
     address public owner;
-    
     // Subscriptions: orderId => subscription details
     mapping(bytes32 => Subscription) public subscriptions;
-    
+
     // Track all active order IDs for iteration
     bytes32[] public activeOrderIds;
     mapping(bytes32 => uint256) public orderIndex;
     bool public cronSubscribed;
     bool public vm;
-
     // ============ Modifiers ============
     modifier onlyReactiveCallback() {
         if (msg.sender != reactiveCallbackAddress) revert ReactiveTWAMM__UnauthorizedCallback();
@@ -100,25 +111,32 @@ contract ReactiveTWAMM {
         require(msg.sender == owner, "Only owner");
         _;
     }
-
     modifier onlyReactiveService() {
         require(msg.sender == REACTIVE_SERVICE, "Only reactive service");
         _;
     }
-
+    modifier vmOnly() {
+        require(vm, "VM only");
+        _;
+    }
     modifier rnOnly() {
         require(!vm, "Reactive Network only");
         _;
     }
 
-    // ============ Constructor ============
-    constructor(address _reactiveCallbackAddress) {
+    constructor(address _reactiveCallbackAddress) payable {
         reactiveCallbackAddress = _reactiveCallbackAddress;
         owner = msg.sender;
         _detectVm();
-    }
 
-    receive() external payable {}
+        if (!vm) {
+            ISubscriptionService(REACTIVE_SERVICE)
+                .subscribe(
+                    block.chainid, REACTIVE_SERVICE, CRON10_TOPIC0, REACTIVE_IGNORE, REACTIVE_IGNORE, REACTIVE_IGNORE
+                );
+            cronSubscribed = true;
+        }
+    }
 
     // ============ External Functions ============
 
@@ -128,20 +146,8 @@ contract ReactiveTWAMM {
      * @param poolKey The pool key
      * @param orderId The order to monitor
      */
-    function subscribe(
-        address targetHook,
-        PoolKey calldata poolKey,
-        bytes32 orderId
-    ) external onlyOwner {
-        _storeSubscription(
-            targetHook,
-            poolKey,
-            orderId,
-            false,
-            address(0),
-            0,
-            false
-        );
+    function subscribe(address targetHook, PoolKey calldata poolKey, bytes32 orderId) external onlyOwner {
+        _storeSubscription(targetHook, poolKey, orderId, false, address(0), 0, false);
     }
 
     /**
@@ -161,15 +167,7 @@ contract ReactiveTWAMM {
         uint256 targetPrice,
         bool aboveTarget
     ) external onlyOwner {
-        _storeSubscription(
-            targetHook,
-            poolKey,
-            orderId,
-            true,
-            priceFeed,
-            targetPrice,
-            aboveTarget
-        );
+        _storeSubscription(targetHook, poolKey, orderId, true, priceFeed, targetPrice, aboveTarget);
     }
 
     /**
@@ -181,7 +179,7 @@ contract ReactiveTWAMM {
         if (!sub.active) revert ReactiveTWAMM__InvalidOrder();
 
         sub.active = false;
-        
+
         // Remove from active list (swap and pop)
         uint256 index = orderIndex[orderId];
         uint256 lastIndex = activeOrderIds.length - 1;
@@ -208,7 +206,7 @@ contract ReactiveTWAMM {
         // Check time-based condition
         // In production, you'd get order details from the hook
         // For now, assume time-based execution only
-        
+
         // Check price condition if enabled
         if (sub.usePriceCondition) {
             // This would call an oracle on the destination chain
@@ -254,10 +252,7 @@ contract ReactiveTWAMM {
         }
     }
 
-    /**
-     * @notice Reactive entrypoint: called by Reactive service when subscribed logs are received
-     */
-    function react(LogRecord calldata log) external onlyReactiveService {
+    function react(LogRecord calldata log) external vmOnly {
         if (log.topic_0 != CRON10_TOPIC0) return;
 
         // Process a bounded number of active orders per tick for gas safety.
@@ -277,13 +272,24 @@ contract ReactiveTWAMM {
 
     function ensureCronSubscription() external onlyOwner rnOnly {
         _ensureCronSubscribed();
+
     }
 
     // Reactive service debits contract balance for subscriptions/callbacks via pay(amount).
     function pay(uint256 amount) external onlyReactiveService {
         if (amount == 0) return;
         (bool ok,) = payable(REACTIVE_SERVICE).call{value: amount}("");
-        require(ok, "ReactiveTWAMM__PayFailed");
+        require(ok, "pay failed");
+    }
+
+    fallback() external payable {
+        if (msg.data.length == 32) {
+            uint256 amount = abi.decode(msg.data, (uint256));
+            if (amount > 0 && address(this).balance >= amount) {
+                (bool ok,) = payable(msg.sender).call{value: amount}("");
+                require(ok, "raw pay failed");
+            }
+        }
     }
 
     // ============ View Functions ============
@@ -299,7 +305,7 @@ contract ReactiveTWAMM {
     function getActiveOrders(uint256 start, uint256 count) external view returns (bytes32[] memory) {
         uint256 end = start + count;
         if (end > activeOrderIds.length) end = activeOrderIds.length;
-        
+
         bytes32[] memory result = new bytes32[](end - start);
         for (uint256 i = start; i < end; i++) {
             result[i - start] = activeOrderIds[i];
@@ -315,12 +321,8 @@ contract ReactiveTWAMM {
      */
     function _triggerExecution(address targetHook, PoolKey memory poolKey, bytes32 orderId) internal {
         // First argument is replaced by Reactive infra with the source RVM ID.
-        bytes memory payload = abi.encodeWithSelector(
-            ITWAMMHook.executeTWAMMChunkReactive.selector,
-            address(0),
-            poolKey,
-            orderId
-        );
+        bytes memory payload =
+            abi.encodeWithSelector(ITWAMMHook.executeTWAMMChunkReactive.selector, address(0), poolKey, orderId);
 
         emit Callback(UNICHAIN_SEPOLIA_CHAIN_ID, targetHook, CALLBACK_GAS_LIMIT, payload);
         emit ExecutionTriggered(poolKey.toId(), orderId, block.timestamp);
@@ -358,14 +360,7 @@ contract ReactiveTWAMM {
     function _ensureCronSubscribed() internal {
         if (cronSubscribed) return;
 
-        ISubscriptionService(REACTIVE_SERVICE).subscribe(
-            block.chainid,
-            REACTIVE_SERVICE,
-            CRON10_TOPIC0,
-            0,
-            0,
-            0
-        );
+        ISubscriptionService(REACTIVE_SERVICE).subscribe(block.chainid, REACTIVE_SERVICE, CRON10_TOPIC0, 0, 0, 0);
 
         cronSubscribed = true;
     }
@@ -378,9 +373,6 @@ contract ReactiveTWAMM {
         vm = size == 0;
     }
 
-    // ============ Admin Functions ============
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        owner = newOwner;
-    }
+    receive() external payable {}
 }
+
