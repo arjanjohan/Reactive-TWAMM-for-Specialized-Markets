@@ -36,7 +36,7 @@ contract ReactiveProofLasna is Script {
 
         vm.startBroadcast(pk);
 
-        ReactiveTWAMM reactive = ReactiveTWAMM(REACTIVE_TWAMM_LASNA);
+        ReactiveTWAMM reactive = ReactiveTWAMM(payable(REACTIVE_TWAMM_LASNA));
         reactive.subscribe(UNICHAIN_HOOK, key, orderId);
 
         bytes32[] memory ids = new bytes32[](1);

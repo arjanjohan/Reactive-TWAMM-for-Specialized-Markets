@@ -3,11 +3,24 @@
 import { useEffect, useMemo, useState } from "react";
 import type { NextPage } from "next";
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
-import { decodeEventLog, encodeAbiParameters, erc20Abi, formatUnits, keccak256, maxUint256, parseAbiItem, parseUnits } from "viem";
+import {
+  createPublicClient,
+  decodeEventLog,
+  defineChain,
+  encodeAbiParameters,
+  erc20Abi,
+  formatEther,
+  formatUnits,
+  http,
+  keccak256,
+  maxUint256,
+  parseAbiItem,
+  parseUnits,
+} from "viem";
 import { ArrowPathIcon, ArrowsUpDownIcon, BoltIcon, ChartBarIcon, ClockIcon } from "@heroicons/react/24/outline";
 import twammHookAbi from "~~/contracts/abi/TWAMMHook.json";
 import { useScaffoldReadContract, useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
-import { ADDRS, POOL_MANAGER } from "./addresses";
+import { ADDRS, LASNA, POOL_MANAGER } from "./addresses";
 
 type DurationUnit = "minutes" | "hours" | "days";
 
@@ -59,6 +72,7 @@ const Home: NextPage = () => {
   const [lastOrderId, setLastOrderId] = useState<`0x${string}` | null>(null);
   const [flowStatus, setFlowStatus] = useState<string>("Idle");
   const [windowSeconds, setWindowSeconds] = useState<number>(3600); // default 1h
+  const [lasnaReactiveBalance, setLasnaReactiveBalance] = useState<string>("-");
 
   const tokenIn = useMemo(
     () =>
@@ -270,6 +284,41 @@ const Home: NextPage = () => {
     };
   }, [publicClient, poolId, poolKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchLasnaBalance = async () => {
+      try {
+        const lasnaRpc = process.env.NEXT_PUBLIC_LASNA_RPC;
+        if (!lasnaRpc) {
+          if (!cancelled) setLasnaReactiveBalance("set NEXT_PUBLIC_LASNA_RPC");
+          return;
+        }
+
+        const lasna = defineChain({
+          id: LASNA.chainId,
+          name: "Reactive Lasna",
+          nativeCurrency: { name: "REACT", symbol: "REACT", decimals: 18 },
+          rpcUrls: { default: { http: [lasnaRpc] }, public: { http: [lasnaRpc] } },
+          testnet: true,
+        });
+
+        const lasnaClient = createPublicClient({ chain: lasna, transport: http(lasnaRpc) });
+        const bal = await lasnaClient.getBalance({ address: LASNA.reactiveTwamm });
+        if (!cancelled) setLasnaReactiveBalance(formatEther(bal));
+      } catch {
+        if (!cancelled) setLasnaReactiveBalance("error");
+      }
+    };
+
+    fetchLasnaBalance();
+    const id = setInterval(fetchLasnaBalance, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
   const filteredChartPoints = useMemo(() => {
     if (chartPoints.length === 0) return [];
     if (windowSeconds <= 0) return chartPoints;
@@ -422,7 +471,7 @@ const Home: NextPage = () => {
             <div className="badge badge-primary badge-outline">{targetNetwork.name}</div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
               <p className="text-base-content/70">Cron</p>
               <p className="font-semibold">{String(Boolean(cronSubscribed))}</p>
@@ -434,6 +483,10 @@ const Home: NextPage = () => {
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
               <p className="text-base-content/70">Claimable</p>
               <p className="font-semibold">{claimableOutput}</p>
+            </div>
+            <div className="rounded-lg bg-base-200 p-2 border border-base-300">
+              <p className="text-base-content/70">Lasna Reactive Bal</p>
+              <p className="font-semibold">{lasnaReactiveBalance}</p>
             </div>
           </div>
         </div>
