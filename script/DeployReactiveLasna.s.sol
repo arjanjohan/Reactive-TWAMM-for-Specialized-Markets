@@ -12,6 +12,7 @@ import {ReactiveTWAMM} from "../src/ReactiveTWAMM.sol";
 contract DeployReactiveLasna is Script {
     // Reactive callback proxy on Lasna testnet (from Reactive docs: Origins & Destinations)
     address constant REACTIVE_CALLBACK_LASNA = 0x0000000000000000000000000000000000fffFfF;
+    uint256 constant FUND_AMOUNT = 0.1 ether;
 
     function run() external {
         uint256 deployerPrivateKey = _loadPrivateKey();
@@ -28,10 +29,15 @@ contract DeployReactiveLasna is Script {
 
         vm.startBroadcast(deployerPrivateKey);
         ReactiveTWAMM reactive = new ReactiveTWAMM(REACTIVE_CALLBACK_LASNA);
+
+        (bool ok,) = payable(address(reactive)).call{value: FUND_AMOUNT}("");
+        require(ok, "Funding ReactiveTWAMM failed");
+
         vm.stopBroadcast();
 
         console2.log("");
         console2.log("ReactiveTWAMM deployed at:", address(reactive));
+        console2.log("Funded amount (wei):", FUND_AMOUNT);
         console2.log("Export:");
         console2.log("LASNA_REACTIVE_TWAMM_ADDRESS=", address(reactive));
     }
