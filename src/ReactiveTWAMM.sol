@@ -279,6 +279,13 @@ contract ReactiveTWAMM {
         _ensureCronSubscribed();
     }
 
+    // Reactive service debits contract balance for subscriptions/callbacks via pay(amount).
+    function pay(uint256 amount) external onlyReactiveService {
+        if (amount == 0) return;
+        (bool ok,) = payable(REACTIVE_SERVICE).call{value: amount}("");
+        require(ok, "ReactiveTWAMM__PayFailed");
+    }
+
     // ============ View Functions ============
 
     function getSubscription(bytes32 orderId) external view returns (Subscription memory) {
