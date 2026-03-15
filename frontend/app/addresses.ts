@@ -14,5 +14,5 @@ export const CHAIN_ID = 1301 as const;
 
 export const LASNA = {
   chainId: 5318007 as const,
-  reactiveTwamm: "0x7Ec9b8802342a119FACCd228b806eC49B4124D17" as const,
+  reactiveTwamm: "0xe26f40AF38799b11632B1f4Bedd189c542616bc3" as const,
 };

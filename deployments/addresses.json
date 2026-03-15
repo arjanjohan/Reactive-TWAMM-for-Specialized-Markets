@@ -13,7 +13,7 @@
   },
   "reactiveLasna": {
     "chainId": 5318007,
-    "reactiveTwamm": "0x7Ec9b8802342a119FACCd228b806eC49B4124D17",
+    "reactiveTwamm": "0xe26f40AF38799b11632B1f4Bedd189c542616bc3",
     "reactiveCallbackProxy": "0x0000000000000000000000000000000000fffFfF"
   }
 }
