@@ -118,8 +118,6 @@ contract ReactiveTWAMM {
         _detectVm();
     }
 
-    receive() external payable {}
-
     // ============ External Functions ============
 
     /**

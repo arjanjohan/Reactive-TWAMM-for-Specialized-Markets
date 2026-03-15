@@ -11,8 +11,3 @@ export const ADDRS = {
 
 export const POOL_MANAGER = "0x00B036B58a818B1BC34d502D3fE730Db729e62AC" as const;
 export const CHAIN_ID = 1301 as const;
-
-export const LASNA = {
-  chainId: 5318007 as const,
-  reactiveTwamm: "0x7Ec9b8802342a119FACCd228b806eC49B4124D17" as const,
-};
