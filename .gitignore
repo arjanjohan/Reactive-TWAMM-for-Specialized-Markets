@@ -10,5 +10,19 @@ out/
 # Docs
 docs/
 
-# Dotenv file
+# Dotenv files
 .env
+.env.local
+.env.*.local
+
+# Frontend build artifacts / deps
+frontend/.next/
+frontend/out/
+frontend/node_modules/
+frontend/.turbo/
+
+# Script JS deps
+script/node_modules/
+
+# Generic JS deps (repo root)
+node_modules/
