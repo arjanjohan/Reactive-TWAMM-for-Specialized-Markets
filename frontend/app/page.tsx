@@ -339,6 +339,8 @@ const Home: NextPage = () => {
         setFlowStatus("Waiting for approve confirmation...");
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
       }
+      setFlowStatus(`Approval confirmed. Click Submit again to send TWAMM order.`);
+      return;
     }
 
     const submitHash = await writeTwamm({
