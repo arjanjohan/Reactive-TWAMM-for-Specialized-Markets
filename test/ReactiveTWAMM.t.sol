@@ -14,7 +14,6 @@ contract ReactiveTWAMMTest is Test {
     event Callback(uint256 indexed chain_id, address indexed _contract, uint64 indexed gas_limit, bytes payload);
 
     address internal owner = address(this);
-    address internal callback = address(0xBEEF);
     address internal targetHook = address(0x1234);
 
     bytes32 internal constant ORDER_ID = keccak256("order-1");
@@ -28,41 +27,31 @@ contract ReactiveTWAMMTest is Test {
     });
 
     function setUp() public {
-        reactive = new ReactiveTWAMM(callback);
+        // Deploy in test environment (no REACTIVE_SERVICE code, so vm=true)
+        reactive = new ReactiveTWAMM();
     }
 
-    function test_SubscribeAndExecuteViaReactiveCallback() public {
+    function test_SubscribeAndCheckActive() public {
         reactive.subscribe(targetHook, poolKey, ORDER_ID);
-
-        vm.prank(callback);
-        reactive.executeTWAMMChunk(ORDER_ID);
 
         ReactiveTWAMM.Subscription memory sub = reactive.getSubscription(ORDER_ID);
         assertTrue(sub.active);
-        assertGt(sub.lastExecutionTime, 0);
+        assertEq(sub.targetHook, targetHook);
+        assertEq(sub.orderId, ORDER_ID);
     }
 
-    function test_RevertIf_ExecuteCalledByNonCallback() public {
-        reactive.subscribe(targetHook, poolKey, ORDER_ID);
-
-        vm.prank(address(0xCAFE));
-        vm.expectRevert(ReactiveTWAMM.ReactiveTWAMM__UnauthorizedCallback.selector);
-        reactive.executeTWAMMChunk(ORDER_ID);
-    }
-
-    function test_BatchExecute_DoesNotRevertForActiveSubscription() public {
+    function test_BatchExecute_EmitsCallback() public {
         reactive.subscribe(targetHook, poolKey, ORDER_ID);
 
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = ORDER_ID;
 
-        bytes memory payload = abi.encodeWithSelector(ITWAMMHook.executeTWAMMChunkReactive.selector, address(0), poolKey, ORDER_ID);
+        bytes memory payload = abi.encodeWithSelector(ITWAMMHook.executeTWAMMChunkReactive.selector, address(reactive), poolKey, ORDER_ID);
         vm.expectEmit(true, true, true, true, address(reactive));
         emit Callback(1301, targetHook, 1_200_000, payload);
 
         reactive.batchExecute(ids);
 
-        // Subscription remains active and discoverable.
         ReactiveTWAMM.Subscription memory sub = reactive.getSubscription(ORDER_ID);
         assertTrue(sub.active);
     }
@@ -74,10 +63,17 @@ contract ReactiveTWAMMTest is Test {
         bytes32[] memory ids = new bytes32[](1);
         ids[0] = ORDER_ID;
 
-        // Should not revert and should not reactivate unsubscribed order.
         reactive.batchExecute(ids);
 
         ReactiveTWAMM.Subscription memory sub = reactive.getSubscription(ORDER_ID);
         assertFalse(sub.active);
+    }
+
+    function test_UnsubscribeRemovesOrder() public {
+        reactive.subscribe(targetHook, poolKey, ORDER_ID);
+        assertEq(reactive.getActiveOrderCount(), 1);
+
+        reactive.unsubscribe(ORDER_ID);
+        assertEq(reactive.getActiveOrderCount(), 0);
     }
 }
