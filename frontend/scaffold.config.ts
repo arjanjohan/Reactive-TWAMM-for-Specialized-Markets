@@ -1,4 +1,4 @@
-import { defineChain } from "viem";
+import { type Chain, defineChain } from "viem";
 
 const unichainSepolia = defineChain({
   id: 1301,
@@ -22,7 +22,7 @@ const unichainSepolia = defineChain({
 });
 
 export type BaseConfig = {
-  targetNetworks: readonly chains.Chain[];
+  targetNetworks: readonly Chain[];
   pollingInterval: number;
   alchemyApiKey: string;
   rpcOverrides?: Record<number, string>;

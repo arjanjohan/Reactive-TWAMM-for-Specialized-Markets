@@ -189,7 +189,8 @@ const Home: NextPage = () => {
     });
   }, [claimableOutputRaw, tokenOut.decimals]);
 
-  const { writeContractAsync: writeTwamm, isMining: isTwammMining } = useScaffoldWriteContract({ contractName: "TWAMMHook" });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { writeContractAsync: writeTwamm, isMining: isTwammMining } = useScaffoldWriteContract({ contractName: "TWAMMHook" }) as any;
   const { writeContractAsync: writeErc20 } = useWriteContract();
   const { sendTransactionAsync } = useSendTransaction();
 
@@ -470,7 +471,7 @@ const Home: NextPage = () => {
     let parsedOrderId: `0x${string}` | null = null;
     for (const log of receipt.logs) {
       try {
-        const decoded = decodeEventLog({ abi: twammHookAbi as any, data: log.data, topics: log.topics });
+        const decoded = decodeEventLog({ abi: twammHookAbi as any, data: log.data, topics: log.topics }) as any;
         if (decoded.eventName === "OrderSubmitted") {
           parsedOrderId = decoded.args.orderId as `0x${string}`;
           break;
