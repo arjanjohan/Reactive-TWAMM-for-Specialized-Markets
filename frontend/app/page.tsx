@@ -621,7 +621,7 @@ const Home: NextPage = () => {
         <div className="card-body">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-black">Reactive TWAMM</h1>
-            <div className="badge badge-primary badge-outline">{targetNetwork.name}</div>
+            <div className="badge badge-primary badge-outline">Reactive Lasna Testnet</div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">

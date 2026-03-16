@@ -83,7 +83,7 @@ export const Header = () => {
         </details>
         <Link href="/" passHref className="hidden lg:flex items-center gap-3 ml-4 mr-6 shrink-0">
           <div className="flex relative w-10 h-10 rounded-xl ring-1 ring-primary/40 shadow-md shadow-primary/20 bg-base-200 p-1">
-            <Image alt="SE2 logo" className="cursor-pointer" fill src="/logo.svg" />
+            <Image alt="Reactive TWAMM logo" className="cursor-pointer" fill src="/logo.png" />
           </div>
           <div className="flex flex-col">
             <span className="font-bold leading-tight tracking-wide">Reactive TWAMM</span>

@@ -1,5 +1,15 @@
 # Reactive TWAMM for Specialized Markets
 
+
+<div align="center">
+
+![logo](/frontend/public/logo.png)
+<h4 align="center">
+  <a href="https://reactive-twamm-for-specialized-mark.vercel.app">App</a> |
+  <a href="https://scaffold-move-chi.vercel.app/">Demo video</a>
+</h4>
+</div>
+
 **Hookathon:** UHI (Uniswap Hook Incubator) - Specialized Markets Track
 **Sponsors:** Reactive Network + Unichain
 **Timeline:** March 2-19, 2026
