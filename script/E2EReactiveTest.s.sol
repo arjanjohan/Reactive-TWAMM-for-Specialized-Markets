@@ -280,18 +280,19 @@ contract E2E_Step3_VerifyDelivery is Script {
             console2.log("");
             console2.log("  Checklist:");
             console2.log("  1. Did Step 2 batchExecute emit a Callback event? (check -vvv trace)");
-            console2.log("  2. Does authorizedReactiveRvmId match the Lasna contract address?");
+            console2.log("  2. Does authorizedReactiveRvmId match the DEPLOYER EOA?");
+            console2.log("     (Reactive infra overwrites the first payload arg with deployer EOA, not the contract address)");
             address rvmId = hook.authorizedReactiveRvmId();
-            address lasna;
-            try vm.envAddress("LASNA_REACTIVE_TWAMM") returns (address a) { lasna = a; } catch {}
-            if (lasna != address(0)) {
-                if (rvmId != lasna) {
-                    console2.log("  >>> MISMATCH! authorizedReactiveRvmId != LASNA_REACTIVE_TWAMM");
+            address deployer;
+            try vm.envAddress("DEPLOYER_ADDRESS") returns (address a) { deployer = a; } catch {}
+            if (deployer != address(0)) {
+                if (rvmId != deployer) {
+                    console2.log("  >>> MISMATCH! authorizedReactiveRvmId != DEPLOYER_ADDRESS");
                     console2.log("      Hook expects:", rvmId);
-                    console2.log("      Lasna actual:", lasna);
-                    console2.log("  >>> Fix: call setReactiveCallbackConfig on hook");
+                    console2.log("      Deployer EOA:", deployer);
+                    console2.log("  >>> Fix: call setReactiveCallbackConfig(callbackProxy, DEPLOYER_ADDRESS)");
                 } else {
-                    console2.log("  rvmId matches Lasna contract (OK)");
+                    console2.log("  rvmId matches deployer EOA (OK)");
                 }
             }
             console2.log("  3. Is Reactive infra delivering callbacks on Unichain Sepolia?");

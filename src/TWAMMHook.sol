@@ -353,6 +353,8 @@ contract TWAMMHook is IHooks, ITWAMMHook {
 
     /**
      * @notice Reactive-only entrypoint via callback proxy (security-hardened path)
+     * @dev reactiveRvmId is injected by Reactive infra (= deployer EOA, not the Lasna contract address).
+     *      Set authorizedReactiveRvmId to the deployer EOA via setReactiveCallbackConfig().
      */
     function executeTWAMMChunkReactive(address reactiveRvmId, PoolKey calldata key, bytes32 orderId) external whenNotPaused {
         if (msg.sender != reactiveCallbackProxy || reactiveRvmId != authorizedReactiveRvmId) {

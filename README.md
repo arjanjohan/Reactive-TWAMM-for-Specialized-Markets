@@ -1,7 +1,7 @@
 # Reactive TWAMM for Specialized Markets
 
-**Hookathon:** UHI (Uniswap Hook Incubator) - Specialized Markets Track  
-**Sponsors:** Reactive Network + Unichain  
+**Hookathon:** UHI (Uniswap Hook Incubator) - Specialized Markets Track
+**Sponsors:** Reactive Network + Unichain
 **Timeline:** March 2-19, 2026
 
 ---
@@ -108,7 +108,7 @@ Large trades in illiquid markets cause massive slippage. Traditional AMMs execut
 ### Theme Fit: "Specialized Markets"
 - Designed for **illiquid assets** where TWAMM matters most
 - **RWA**: Real estate tokens, private equity
-- **Prediction markets**: Event outcomes with volatile liquidity  
+- **Prediction markets**: Event outcomes with volatile liquidity
 - **Exotic derivatives**: Custom curves, low volume
 
 ### Technical Feasibility
@@ -208,10 +208,12 @@ source .env.addresses
 
 Authorizes the Reactive Network infrastructure to call `executeTWAMMChunkReactive` on the hook. Without this, Reactive-triggered chunk executions will revert.
 
+**Important:** The second argument must be the **deployer EOA address** (`$DEPLOYER_ADDRESS`), NOT the Lasna contract address. Reactive Network overwrites the first `address` parameter in callback payloads with the RVM ID, which equals the deployer's EOA.
+
 ```bash
 cast send $TWAMM_HOOK \
   "setReactiveCallbackConfig(address,address)" \
-  $REACTIVE_CALLBACK_UNICHAIN $LASNA_REACTIVE_TWAMM \
+  $REACTIVE_CALLBACK_UNICHAIN $DEPLOYER_ADDRESS \
   --rpc-url $UNICHAIN_RPC --private-key $PRIVATE_KEY
 ```
 
@@ -354,30 +356,9 @@ Current: **32/32 tests passing**
 
 ---
 
-## 📝 Proposal Deliverables
+## 🔗 Links
 
-### March 2 - Proposal Submission
-- ✅ Hook concept & architecture
-- ✅ Initial implementation scaffold
-- ✅ Test suite demonstrating core logic
-- 🔄 Demo video (optional, can defer to Week 3)
-
-### March 9 - Update 1
-- ✅ Core TWAMM hook deployed on Unichain testnet
-- ✅ Order submission → chunk execution flow working
-- 🔄 Screenshot/video of working mechanism
-
-### March 16 - Update 2
-- ✅ Reactive Network integration live
-- ✅ Cross-chain price monitoring
-- ✅ Frontend with execution logs
-- 🔄 Demo presentation ready
-
-### March 19 - Final Submission
-- ✅ Production deployment
-- ✅ Complete documentation
-- ✅ 2-3 minute demo video
-
+- [Frontend](https://reactive-twamm-for-specialized-mark.vercel.app)
 ---
 
 ## 🔗 Resources

@@ -217,7 +217,7 @@ contract VerifyUnichainDelivery is Script {
             console2.log("    - Callback event not emitted on Lasna (check batchExecute tx logs)");
             console2.log("    - Reactive infra not delivering callbacks");
             console2.log("    - reactiveCallbackProxy or authorizedReactiveRvmId mismatch");
-            console2.log("    - authorizedReactiveRvmId must match Lasna contract address");
+            console2.log("    - authorizedReactiveRvmId must match DEPLOYER EOA (not contract address)");
         } else if (executed < total) {
             console2.log("[~] Partial execution - some callbacks landed");
             console2.log("    Reactive flow is working but may be slow or intermittent");

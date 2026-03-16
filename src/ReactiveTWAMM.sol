@@ -169,6 +169,9 @@ contract ReactiveTWAMM is AbstractReactive {
     // ============ Internal Functions ============
 
     function _triggerExecution(address targetHook, PoolKey memory poolKey, bytes32 orderId) internal {
+        // NOTE: Reactive Network infra overwrites the first address arg in the payload
+        // with the RVM ID (= deployer EOA). The address(this) here is just a placeholder.
+        // The destination hook must set authorizedReactiveRvmId to the deployer EOA, not this contract.
         bytes memory payload =
             abi.encodeWithSelector(ITWAMMHook.executeTWAMMChunkReactive.selector, address(this), poolKey, orderId);
 
