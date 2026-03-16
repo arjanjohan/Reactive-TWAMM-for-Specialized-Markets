@@ -138,35 +138,167 @@ forge install
 # Build
 forge build
 
-# Test
+# Test (24 tests across 3 suites)
 forge test
 
 # Run with verbosity
 forge test -vv
 ```
 
-## 📍 Single Source of Truth for Addresses
+---
 
-All deployed addresses now live in:
+## 🚢 Full Deployment Flow
 
-- `deployments/addresses.json`
+### Prerequisites
 
-Sync generated consumers after any address change:
+Create a `.env` file with:
+
+```bash
+PRIVATE_KEY=0x...          # Deployer private key
+UNICHAIN_RPC=https://sepolia.unichain.org
+```
+
+Load environment in every terminal session:
+
+```bash
+set -a; source .env; source .env.addresses; set +a
+```
+
+### Step 1: Deploy TWAMMHook to Unichain Sepolia
+
+Deploys the TWAMM hook (with CREATE2 salt mining for correct hook permission flags) and a Unichain-side ReactiveTWAMM contract.
+
+```bash
+forge script script/DeployTWAMM.s.sol \
+  --rpc-url $UNICHAIN_RPC --broadcast -vvv
+```
+
+Capture the output addresses:
+- `TWAMM_HOOK_ADDRESS` (the CREATE2-mined hook)
+- `REACTIVE_TWAMM_ADDRESS`
+
+Update `deployments/addresses.json` with the new `twammHook` and `reactiveTwamm` values.
+
+### Step 2: Sync addresses
+
+```bash
+node script/sync_addresses.mjs
+source .env.addresses
+```
+
+This regenerates `.env.addresses` and `frontend/app/addresses.ts` from the single source of truth.
+
+### Step 3: Setup demo environment (tokens + pool + liquidity)
+
+Deploys fresh USDC/REACT demo tokens, creates a Uniswap v4 pool with the hook, and adds full-range liquidity.
+
+```bash
+forge script script/SetupDemoEnvironment.s.sol \
+  --rpc-url $UNICHAIN_RPC --broadcast -vvv
+```
+
+Capture the output addresses (USDC, REACT, SWAP_EXECUTOR) and update the `demo` section in `deployments/addresses.json`, then re-sync:
+
+```bash
+node script/sync_addresses.mjs
+source .env.addresses
+```
+
+### Step 4: Configure Reactive callback authorization
+
+Authorizes the Reactive Network infrastructure to call `executeTWAMMChunkReactive` on the hook. Without this, Reactive-triggered chunk executions will revert.
+
+```bash
+cast send $TWAMM_HOOK \
+  "setReactiveCallbackConfig(address,address)" \
+  $REACTIVE_CALLBACK_UNICHAIN $LASNA_REACTIVE_TWAMM \
+  --rpc-url $UNICHAIN_RPC --private-key $PRIVATE_KEY
+```
+
+### Step 5: Deploy ReactiveTWAMM to Lasna (if needed)
+
+Only required on first deploy or if the Lasna contract needs changes. The existing Lasna deployment can be reused across hook redeploys since new subscriptions pass the hook address dynamically.
+
+```bash
+# Check Lasna wallet balance first
+forge script script/CheckLasnaBalance.s.sol --rpc-url https://kopli-rpc.rkt.ink
+
+# Deploy (funds contract with 0.1 ETH for Reactive service fees)
+forge script script/DeployReactiveLasna.s.sol \
+  --rpc-url https://kopli-rpc.rkt.ink --broadcast -vvv
+```
+
+Update `reactiveLasna.reactiveTwamm` in `addresses.json` and re-sync.
+
+### Step 6: Setup cron subscription on Lasna
+
+One-time bootstrap so the Reactive cron fires `react()` on each block to check for executable orders.
+
+```bash
+forge script script/SetupReactiveCron.s.sol \
+  --rpc-url https://kopli-rpc.rkt.ink --broadcast -vvv
+```
+
+### Verification
+
+```bash
+# Verify contracts on block explorers
+./script/verify_all.sh
+
+# Quick smoke test: submit an order + execute a chunk
+forge script script/SmokeTWAMM.s.sol --rpc-url $UNICHAIN_RPC --broadcast -vvv
+```
+
+### End-to-End Reactive Callback Test
+
+Tests the full cross-chain flow: submit order on Unichain, trigger execution on Lasna, verify callback delivery back to Unichain.
+
+**Step 1 — Unichain: Submit order** (deploys test tokens, pool, liquidity, and submits a TWAMM order):
+
+```bash
+forge script script/E2EReactiveTest.s.sol:E2E_Step1_SubmitOrder \
+  --rpc-url $UNICHAIN_RPC --broadcast --slow -vvv
+```
+
+Copy `TOKEN0`, `TOKEN1`, and `ORDER_ID` from the output.
+
+**Step 2 — Lasna: Subscribe + execute** (subscribes the order and calls `batchExecute` to emit a `Callback` event):
+
+```bash
+ORDER_ID=<from step 1> TOKEN0=<from step 1> TOKEN1=<from step 1> \
+forge script script/E2EReactiveTest.s.sol:E2E_Step2_ReactiveExecute \
+  --rpc-url https://lasna-rpc.rnk.dev --broadcast --slow -vvv
+```
+
+Check the `-vvv` trace for a `Callback(uint256,address,uint64,bytes)` event.
+
+**Step 3 — Unichain: Verify delivery** (wait ~60s for Reactive infra, then check if chunk executed):
+
+```bash
+ORDER_ID=<from step 1> \
+forge script script/E2EReactiveTest.s.sol:E2E_Step3_VerifyDelivery \
+  --rpc-url $UNICHAIN_RPC -vvv
+```
+
+Reports `SUCCESS` if chunks executed, or a diagnostic checklist if the callback didn't land.
+
+---
+
+## 📍 Address Management
+
+All deployed addresses live in `deployments/addresses.json` (single source of truth).
+
+After any address change, sync to consumers:
 
 ```bash
 node script/sync_addresses.mjs
 ```
 
 This updates:
+- `.env.addresses` — sourced by Foundry scripts and shell commands
+- `frontend/app/addresses.ts` — imported by the Next.js frontend
 
-- `.env.addresses` (for Foundry scripts)
-- `frontend/app/addresses.ts` (for frontend)
-
-Recommended script usage:
-
-```bash
-set -a; source .env; source .env.addresses; set +a
-```
+The `externalContracts.ts` file in the frontend also references the hook/reactive addresses for the scaffold-eth debug UI — update manually if needed.
 
 ---
 
@@ -174,11 +306,34 @@ set -a; source .env; source .env.addresses; set +a
 
 ```
 ├── src/
-│   └── TWAMMHook.sol          # Main hook implementation
+│   ├── TWAMMHook.sol          # Core TWAMM hook (Uniswap v4)
+│   ├── ReactiveTWAMM.sol      # Reactive Network automation contract
+│   ├── SimpleSwapExecutor.sol  # Swap execution helper
+│   ├── interfaces/
+│   │   └── ITWAMMHook.sol     # Hook interface
+│   ├── MockERC20.sol          # Test token
+│   └── TestToken.sol          # Test token
 ├── test/
-│   └── TWAMMHook.t.sol        # Test suite (11 tests passing ✅)
+│   ├── TWAMMHook.t.sol              # Unit tests (16 passing)
+│   ├── TWAMMHook.integration.t.sol  # Integration tests (4 passing)
+│   ├── ReactiveTWAMM.t.sol          # Reactive tests (4 passing)
+│   └── ReactiveCallback.t.sol      # Cross-chain callback tests (8 passing)
+├── script/
+│   ├── DeployTWAMM.s.sol            # Deploy hook to Unichain
+│   ├── DeployReactiveLasna.s.sol    # Deploy ReactiveTWAMM to Lasna
+│   ├── SetupDemoEnvironment.s.sol   # Tokens + pool + liquidity
+│   ├── SetupReactiveCron.s.sol      # Bootstrap cron on Lasna
+│   ├── SmokeTWAMM.s.sol             # Smoke test order
+│   ├── ExecuteSmokeChunk.s.sol      # Execute test chunk
+│   ├── E2EReactiveTest.s.sol        # 3-step cross-chain E2E test
+│   ├── VerifyReactiveFlow.s.sol     # Diagnostic scripts (Lasna + Unichain)
+│   ├── sync_addresses.mjs           # Address sync utility
+│   └── arb_bot.mjs                  # Arbitrage bot
+├── frontend/                   # Next.js React dApp
+├── deployments/
+│   └── addresses.json          # Single source of truth
 ├── lib/
-│   ├── v4-core/               # Uniswap v4 core contracts
+│   ├── v4-core/               # Uniswap v4 core
 │   ├── v4-periphery/          # Uniswap v4 periphery
 │   └── forge-std/             # Foundry std lib
 ├── foundry.toml               # Foundry config
@@ -190,11 +345,12 @@ set -a; source .env; source .env.addresses; set +a
 
 ## 📊 Test Coverage
 
-Current: **22/22 tests passing**
+Current: **32/32 tests passing**
 
-- `TWAMMHook.t.sol`: 15/15 passing
+- `TWAMMHook.t.sol`: 16/16 passing
 - `TWAMMHook.integration.t.sol`: 4/4 passing
-- `ReactiveTWAMM.t.sol`: 3/3 passing
+- `ReactiveTWAMM.t.sol`: 4/4 passing
+- `ReactiveCallback.t.sol`: 8/8 passing (simulated cross-chain callback flow)
 
 ---
 
