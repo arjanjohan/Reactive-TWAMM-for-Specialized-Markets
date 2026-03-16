@@ -28,7 +28,7 @@ contract DeployReactiveLasna is Script {
         require(block.chainid == 5318007, "Wrong network: expected Lasna (5318007)");
 
         vm.startBroadcast(deployerPrivateKey);
-        ReactiveTWAMM reactive = new ReactiveTWAMM(REACTIVE_CALLBACK_LASNA);
+        ReactiveTWAMM reactive = new ReactiveTWAMM();
 
         (bool ok,) = payable(address(reactive)).call{value: FUND_AMOUNT}("");
         require(ok, "Funding ReactiveTWAMM failed");

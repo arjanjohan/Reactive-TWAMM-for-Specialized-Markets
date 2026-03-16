@@ -55,7 +55,7 @@ contract DeployTWAMM is Script {
         console2.log("TWAMM Hook deployed at:", hook);
 
         // Deploy reactive contract
-        ReactiveTWAMM reactive = new ReactiveTWAMM(REACTIVE_CALLBACK_SEPOLIA);
+        ReactiveTWAMM reactive = new ReactiveTWAMM();
         console2.log("ReactiveTWAMM deployed at:", address(reactive));
 
         vm.stopBroadcast();

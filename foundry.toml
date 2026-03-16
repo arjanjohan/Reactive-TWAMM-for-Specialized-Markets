@@ -11,6 +11,7 @@ remappings = [
     "@uniswap/v4-periphery/=lib/v4-periphery/src/",
     "@openzeppelin/=lib/v4-core/lib/openzeppelin-contracts/",
     "forge-std/=lib/forge-std/src/",
+    "reactive-lib/=lib/reactive-lib/src/",
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
