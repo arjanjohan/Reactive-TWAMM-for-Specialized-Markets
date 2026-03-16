@@ -31,6 +31,7 @@ interface ITWAMMHook {
     function twammEnabled(PoolId poolId) external view returns (bool);
     function getOrder(bytes32 orderId) external view returns (TWAMMOrder memory);
     function getOrderProgress(bytes32 orderId) external view returns (uint256 executed, uint256 total);
+    function claimableOutput(bytes32 orderId) external view returns (uint256);
 
     // State changing
     function submitTWAMMOrder(
@@ -43,6 +44,7 @@ interface ITWAMMHook {
     ) external returns (bytes32 orderId);
 
     function cancelTWAMMOrder(bytes32 orderId) external;
+    function claimTWAMMOutput(bytes32 orderId) external;
     function executeTWAMMChunk(PoolKey calldata key, bytes32 orderId) external;
     function executeTWAMMChunkReactive(address reactiveRvmId, PoolKey calldata key, bytes32 orderId) external;
 }

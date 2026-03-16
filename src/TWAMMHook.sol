@@ -46,6 +46,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     error TWAMMHook__TWAMMNotEnabled();
     error TWAMMHook__OnlyPoolManager();
     error TWAMMHook__UnauthorizedReactiveCallback();
+    error TWAMMHook__NothingToClaim();
     error HookNotImplemented();
 
     // Structs defined in ITWAMMHook interface
@@ -61,6 +62,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     mapping(bytes32 => ITWAMMHook.TWAMMOrder) public orders;
     mapping(PoolId => bool) public twammEnabled;
     mapping(PoolId => bytes32[]) public poolOrders;
+    mapping(bytes32 => uint256) public orderOutput;
 
     uint256 public constant MIN_CHUNK_DURATION = 1 minutes;
     uint256 public constant MAX_CHUNKS = 100;
@@ -96,6 +98,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
 
     event OrderCompleted(bytes32 indexed orderId);
     event OrderCancelled(bytes32 indexed orderId);
+    event OutputClaimed(bytes32 indexed orderId, address indexed owner, uint256 amount);
     event TWAMMEnabled(PoolId indexed poolId);
     event Paused(address account);
     event Unpaused(address account);
@@ -375,6 +378,24 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         return (order.executedChunks, order.totalChunks);
     }
 
+    function claimableOutput(bytes32 orderId) external view returns (uint256) {
+        return orderOutput[orderId];
+    }
+
+    function claimTWAMMOutput(bytes32 orderId) external {
+        ITWAMMHook.TWAMMOrder storage order = orders[orderId];
+        if (order.owner == address(0)) revert TWAMMHook__OrderNotFound();
+        if (order.owner != msg.sender) revert TWAMMHook__NotOrderOwner();
+
+        uint256 amount = orderOutput[orderId];
+        if (amount == 0) revert TWAMMHook__NothingToClaim();
+
+        orderOutput[orderId] = 0;
+        IERC20(Currency.unwrap(order.tokenOut)).transfer(msg.sender, amount);
+
+        emit OutputClaimed(orderId, msg.sender, amount);
+    }
+
     /**
      * @notice Pause or unpause the hook
      * @param _paused True to pause, false to unpause
@@ -542,6 +563,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         }
 
         POOL_MANAGER.take(outputCurrency, address(this), amountOut);
+        orderOutput[orderId] += amountOut;
 
         return abi.encode(delta);
     }
