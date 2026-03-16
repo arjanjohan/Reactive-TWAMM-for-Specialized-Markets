@@ -1,14 +1,12 @@
 [
   {
     "type": "constructor",
-    "inputs": [
-      {
-        "name": "_reactiveCallbackAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "nonpayable"
+    "inputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "receive",
+    "stateMutability": "payable"
   },
   {
     "type": "function",
@@ -32,19 +30,6 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "REACTIVE_SERVICE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -115,6 +100,13 @@
   },
   {
     "type": "function",
+    "name": "coverDebt",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "cronSubscribed",
     "inputs": [],
     "outputs": [
@@ -125,26 +117,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "ensureCronSubscription",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "executeTWAMMChunk",
-    "inputs": [
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -310,12 +282,25 @@
   },
   {
     "type": "function",
+    "name": "pay",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "react",
     "inputs": [
       {
         "name": "log",
         "type": "tuple",
-        "internalType": "struct ReactiveTWAMM.LogRecord",
+        "internalType": "struct IReactive.LogRecord",
         "components": [
           {
             "name": "chain_id",
@@ -382,19 +367,6 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "reactiveCallbackAddress",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -599,19 +571,6 @@
   },
   {
     "type": "function",
-    "name": "transferOwnership",
-    "inputs": [
-      {
-        "name": "newOwner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "unsubscribe",
     "inputs": [
       {
@@ -622,19 +581,6 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "vm",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "event",
@@ -694,31 +640,6 @@
   },
   {
     "type": "event",
-    "name": "PriceConditionChecked",
-    "inputs": [
-      {
-        "name": "orderId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "currentPrice",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "conditionMet",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "Subscribed",
     "inputs": [
       {
@@ -757,22 +678,12 @@
   },
   {
     "type": "error",
-    "name": "ReactiveTWAMM__CallbackFailed",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "ReactiveTWAMM__ConditionsNotMet",
     "inputs": []
   },
   {
     "type": "error",
     "name": "ReactiveTWAMM__InvalidOrder",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "ReactiveTWAMM__UnauthorizedCallback",
     "inputs": []
   }
 ]

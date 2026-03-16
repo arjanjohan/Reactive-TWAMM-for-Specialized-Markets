@@ -3,10 +3,10 @@
 
 export const ADDRS = {
   hook: "0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0" as const,
-  reactive: "0x7087f17ecb3d5b90f83d561b27147c9fe67ee1e6" as const,
-  usdc: "0x3caacE10417a7aC3df9713AE941f5d75d138F056" as const,
-  react: "0x7b9A16f650536FC0AC6D6eA898be45d46d342A5d" as const,
-  swapExecutor: "0xe83E7Df0caFF1E5Ef5E1C2E2e5E1b484BA969C5F" as const,
+  reactive: "0x7087f17ECB3d5B90F83D561b27147c9Fe67ee1E6" as const,
+  usdc: "0x330cCB490151545875eBB8260A093345CE87FC2d" as const,
+  react: "0xa354a2127a43d9E006f9408d2912d01f81eaEEDa" as const,
+  swapExecutor: "0xFE3c121de4834067235BdBe205687ceAa04150Ca" as const,
 };
 
 export const POOL_MANAGER = "0x00B036B58a818B1BC34d502D3fE730Db729e62AC" as const;
@@ -14,5 +14,5 @@ export const CHAIN_ID = 1301 as const;
 
 export const LASNA = {
   chainId: 5318007 as const,
-  reactiveTwamm: "0xe26f40AF38799b11632B1f4Bedd189c542616bc3" as const,
+  reactiveTwamm: "0xfCf3d3FAB663Fb72C15a7bC92Fd03C2d606133C8" as const,
 };

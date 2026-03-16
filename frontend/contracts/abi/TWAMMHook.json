@@ -877,13 +877,7 @@
         "internalType": "bytes32"
       }
     ],
-    "outputs": [
-      {
-        "name": "amountOut",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -891,7 +885,7 @@
     "name": "claimableOutput",
     "inputs": [
       {
-        "name": "",
+        "name": "orderId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -1133,6 +1127,25 @@
     "type": "function",
     "name": "orderCounter",
     "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "orderOutput",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
     "outputs": [
       {
         "name": "",
@@ -1573,7 +1586,7 @@
         "internalType": "address"
       },
       {
-        "name": "amountOut",
+        "name": "amount",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1648,6 +1661,11 @@
   {
     "type": "error",
     "name": "TWAMMHook__NotOrderOwner",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TWAMMHook__NothingToClaim",
     "inputs": []
   },
   {

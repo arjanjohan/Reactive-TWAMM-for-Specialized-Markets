@@ -1,5 +1,5 @@
 import { wagmiConnectors } from "./wagmiConnectors";
-import { Chain, createClient, fallback, http } from "viem";
+import { Chain, createClient, defineChain, fallback, http } from "viem";
 import { hardhat, mainnet } from "viem/chains";
 import { createConfig } from "wagmi";
 import scaffoldConfig, { DEFAULT_ALCHEMY_API_KEY, ScaffoldConfig } from "~~/scaffold.config";
@@ -7,10 +7,22 @@ import { getAlchemyHttpUrl } from "~~/utils/scaffold-eth";
 
 const { targetNetworks } = scaffoldConfig;
 
+const reactiveLasna = defineChain({
+  id: 5318007,
+  name: "Reactive Lasna",
+  nativeCurrency: { name: "REACT", symbol: "REACT", decimals: 18 },
+  rpcUrls: {
+    default: { http: [process.env.NEXT_PUBLIC_LASNA_RPC || "https://kopli-rpc.rkt.ink"] },
+    public: { http: [process.env.NEXT_PUBLIC_LASNA_RPC || "https://kopli-rpc.rkt.ink"] },
+  },
+  testnet: true,
+});
+
 // We always want to have mainnet enabled (ENS resolution, ETH price, etc). But only once.
-export const enabledChains = targetNetworks.find((network: Chain) => network.id === 1)
+const baseChains = targetNetworks.find((network: Chain) => network.id === 1)
   ? targetNetworks
   : ([...targetNetworks, mainnet] as const);
+export const enabledChains = [...baseChains, reactiveLasna] as unknown as typeof baseChains;
 
 export const wagmiConfig = createConfig({
   chains: enabledChains,

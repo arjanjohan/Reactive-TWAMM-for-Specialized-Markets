@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { NextPage } from "next";
-import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useSendTransaction, useSwitchChain, useWriteContract } from "wagmi";
 import {
   createPublicClient,
   decodeEventLog,
@@ -17,9 +17,10 @@ import {
   parseAbiItem,
   parseUnits,
 } from "viem";
-import { ArrowPathIcon, ArrowsUpDownIcon, BoltIcon, ChartBarIcon, ClockIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon, ArrowsUpDownIcon, BoltIcon, ChartBarIcon, ClockIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import twammHookAbi from "~~/contracts/abi/TWAMMHook.json";
-import { useScaffoldReadContract, useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import reactiveTwammAbi from "~~/contracts/abi/ReactiveTWAMM.json";
+import { useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { ADDRS, LASNA, POOL_MANAGER } from "./addresses";
 
 type DurationUnit = "minutes" | "hours" | "days";
@@ -59,10 +60,22 @@ const mockErc20Abi = [
   },
 ] as const;
 
+const lasnaChain = defineChain({
+  id: LASNA.chainId,
+  name: "Reactive Lasna",
+  nativeCurrency: { name: "REACT", symbol: "REACT", decimals: 18 },
+  rpcUrls: {
+    default: { http: [process.env.NEXT_PUBLIC_LASNA_RPC || "https://kopli-rpc.rkt.ink"] },
+    public: { http: [process.env.NEXT_PUBLIC_LASNA_RPC || "https://kopli-rpc.rkt.ink"] },
+  },
+  testnet: true,
+});
+
 const Home: NextPage = () => {
-  const { address } = useAccount();
+  const { address, chainId: walletChainId } = useAccount();
   const publicClient = usePublicClient();
   const { targetNetwork } = useTargetNetwork();
+  const { switchChainAsync } = useSwitchChain();
 
   const [usdcToReact, setUsdcToReact] = useState(true);
   const [amountIn, setAmountIn] = useState("1000");
@@ -73,6 +86,11 @@ const Home: NextPage = () => {
   const [flowStatus, setFlowStatus] = useState<string>("Idle");
   const [windowSeconds, setWindowSeconds] = useState<number>(3600); // default 1h
   const [lasnaReactiveBalance, setLasnaReactiveBalance] = useState<string>("-");
+  const [lasnaActiveOrderCount, setLasnaActiveOrderCount] = useState<number>(0);
+  const [lasnaDebt, setLasnaDebt] = useState<string>("0");
+  const [orderProgress, setOrderProgress] = useState<{ executed: number; total: number } | null>(null);
+  const [lasnaSubscribing, setLasnaSubscribing] = useState(false);
+  const [fundAmount, setFundAmount] = useState("0.1");
 
   const tokenIn = useMemo(
     () =>
@@ -95,7 +113,7 @@ const Home: NextPage = () => {
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    query: { enabled: Boolean(address) && tokenIn.address !== "0x0000000000000000000000000000000000000000" },
+    query: { enabled: Boolean(address) },
   });
 
   const { data: tokenOutBalanceRaw } = useReadContract({
@@ -103,16 +121,10 @@ const Home: NextPage = () => {
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    query: { enabled: Boolean(address) && tokenOut.address !== "0x0000000000000000000000000000000000000000" },
-  });
-
-  const { data: tokenInAllowanceRaw } = useReadContract({
-    address: tokenIn.address,
-    abi: erc20Abi,
-    functionName: "allowance",
-    args: address ? [address, ADDRS.hook] : undefined,
     query: { enabled: Boolean(address) },
   });
+
+
 
   const tokenInBalance = useMemo(() => {
     if (!tokenInBalanceRaw) return "0";
@@ -123,11 +135,6 @@ const Home: NextPage = () => {
     if (!tokenOutBalanceRaw) return "0";
     return Number(formatUnits(tokenOutBalanceRaw, tokenOut.decimals)).toLocaleString(undefined, { maximumFractionDigits: 4 });
   }, [tokenOutBalanceRaw, tokenOut.decimals]);
-
-  const tokenInAllowance = useMemo(() => {
-    if (!tokenInAllowanceRaw) return 0n;
-    return tokenInAllowanceRaw;
-  }, [tokenInAllowanceRaw]);
 
   const durationSeconds = useMemo(() => {
     const n = Number(durationValue || 0);
@@ -165,10 +172,10 @@ const Home: NextPage = () => {
     };
   }, []);
 
-  const { data: cronSubscribed } = useScaffoldReadContract({ contractName: "ReactiveTWAMM", functionName: "cronSubscribed" });
-  const { data: activeOrderCount } = useScaffoldReadContract({ contractName: "ReactiveTWAMM", functionName: "getActiveOrderCount" });
-  const { data: claimableOutputRaw } = useScaffoldReadContract({
-    contractName: "TWAMMHook",
+  const [lasnaCronSubscribed, setLasnaCronSubscribed] = useState<boolean | null>(null);
+  const { data: claimableOutputRaw } = useReadContract({
+    address: ADDRS.hook,
+    abi: twammHookAbi as any,
     functionName: "claimableOutput",
     args: lastOrderId ? [lastOrderId] : undefined,
     query: { enabled: Boolean(lastOrderId) },
@@ -183,10 +190,8 @@ const Home: NextPage = () => {
   }, [claimableOutputRaw, tokenOut.decimals]);
 
   const { writeContractAsync: writeTwamm, isMining: isTwammMining } = useScaffoldWriteContract({ contractName: "TWAMMHook" });
-  const { writeContractAsync: writeReactive, isMining: isReactiveMining } = useScaffoldWriteContract({
-    contractName: "ReactiveTWAMM",
-  });
   const { writeContractAsync: writeErc20 } = useWriteContract();
+  const { sendTransactionAsync } = useSendTransaction();
 
   const canSubmitOrder = durationSeconds >= MIN_CHUNK_DURATION_SECONDS && Number(amountIn || 0) > 0;
 
@@ -287,37 +292,92 @@ const Home: NextPage = () => {
   useEffect(() => {
     let cancelled = false;
 
-    const fetchLasnaBalance = async () => {
+    const fetchLasnaState = async () => {
       try {
-        const lasnaRpc = process.env.NEXT_PUBLIC_LASNA_RPC;
+        const lasnaRpc = lasnaChain.rpcUrls.default.http[0];
         if (!lasnaRpc) {
           if (!cancelled) setLasnaReactiveBalance("set NEXT_PUBLIC_LASNA_RPC");
           return;
         }
 
-        const lasna = defineChain({
-          id: LASNA.chainId,
-          name: "Reactive Lasna",
-          nativeCurrency: { name: "REACT", symbol: "REACT", decimals: 18 },
-          rpcUrls: { default: { http: [lasnaRpc] }, public: { http: [lasnaRpc] } },
-          testnet: true,
-        });
-
-        const lasnaClient = createPublicClient({ chain: lasna, transport: http(lasnaRpc) });
+        const lasnaClient = createPublicClient({ chain: lasnaChain, transport: http(lasnaRpc) });
         const bal = await lasnaClient.getBalance({ address: LASNA.reactiveTwamm });
         if (!cancelled) setLasnaReactiveBalance(formatEther(bal));
+
+        const cronStatus = await lasnaClient.readContract({
+          address: LASNA.reactiveTwamm,
+          abi: reactiveTwammAbi as any,
+          functionName: "cronSubscribed",
+          args: [],
+        });
+        if (!cancelled) setLasnaCronSubscribed(cronStatus as boolean);
+
+        const activeCount = await lasnaClient.readContract({
+          address: LASNA.reactiveTwamm,
+          abi: reactiveTwammAbi as any,
+          functionName: "getActiveOrderCount",
+          args: [],
+        });
+        if (!cancelled) setLasnaActiveOrderCount(Number(activeCount));
+
+        // Fetch debt from Reactive system contract
+        try {
+          const debt = await lasnaClient.readContract({
+            address: "0x0000000000000000000000000000000000fffFfF",
+            abi: [{ type: "function", name: "debts", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" }] as const,
+            functionName: "debts",
+            args: [LASNA.reactiveTwamm],
+          });
+          if (!cancelled) setLasnaDebt(formatEther(debt as bigint));
+        } catch {
+          if (!cancelled) setLasnaDebt("?");
+        }
       } catch {
-        if (!cancelled) setLasnaReactiveBalance("error");
+        if (!cancelled) {
+          setLasnaReactiveBalance("error");
+          setLasnaCronSubscribed(null);
+        }
       }
     };
 
-    fetchLasnaBalance();
-    const id = setInterval(fetchLasnaBalance, 15000);
+    fetchLasnaState();
+    const id = setInterval(fetchLasnaState, 15000);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
   }, []);
+
+  // Poll order progress from Unichain TWAMMHook
+  useEffect(() => {
+    if (!lastOrderId || !publicClient) {
+      setOrderProgress(null);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchProgress = async () => {
+      try {
+        const result = await publicClient.readContract({
+          address: ADDRS.hook,
+          abi: twammHookAbi as any,
+          functionName: "getOrderProgress",
+          args: [lastOrderId],
+        });
+        const [executed, total] = result as [bigint, bigint];
+        if (!cancelled) setOrderProgress({ executed: Number(executed), total: Number(total) });
+      } catch {
+        if (!cancelled) setOrderProgress(null);
+      }
+    };
+
+    fetchProgress();
+    const id = setInterval(fetchProgress, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [lastOrderId, publicClient]);
 
   const filteredChartPoints = useMemo(() => {
     if (chartPoints.length === 0) return [];
@@ -371,13 +431,9 @@ const Home: NextPage = () => {
     return { exec, trend, yMin, yMax, xStart, xEnd };
   }, [filteredChartPoints]);
 
-  const submitOrder = async () => {
-    setFlowStatus("Submitting order...");
-    const amountBase = parseUnits(amountIn || "0", tokenIn.decimals);
-    const minOutBase = parseUnits(minOutputPerChunk || "0", tokenOut.decimals);
-
-    if (tokenInAllowance < amountBase) {
-      setFlowStatus(`Approving ${tokenIn.symbol} for TWAMM hook...`);
+  const approveForHook = async () => {
+    setFlowStatus(`Approving ${tokenIn.symbol} for TWAMM hook...`);
+    try {
       const approveHash = await writeErc20({
         address: tokenIn.address,
         abi: mockErc20Abi,
@@ -388,9 +444,16 @@ const Home: NextPage = () => {
         setFlowStatus("Waiting for approve confirmation...");
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
       }
-      setFlowStatus(`Approval confirmed. Click Submit Order again.`);
-      return;
+      setFlowStatus(`${tokenIn.symbol} approved ✅ Now submit your order.`);
+    } catch (err: any) {
+      setFlowStatus(`Approve failed: ${err.shortMessage || err.message}`);
     }
+  };
+
+  const submitOrder = async () => {
+    setFlowStatus("Submitting order...");
+    const amountBase = parseUnits(amountIn || "0", tokenIn.decimals);
+    const minOutBase = parseUnits(minOutputPerChunk || "0", tokenOut.decimals);
 
     const submitHash = await writeTwamm({
       functionName: "submitTWAMMOrder",
@@ -425,30 +488,119 @@ const Home: NextPage = () => {
     setFlowStatus("Order submitted ✅ Now click Subscribe.");
   };
 
+  const withLasnaChain = async (fn: () => Promise<void>) => {
+    const prevChainId = walletChainId;
+    try {
+      if (walletChainId !== LASNA.chainId) {
+        setFlowStatus("Switching wallet to Lasna...");
+        await switchChainAsync({ chainId: LASNA.chainId });
+      }
+      await fn();
+    } finally {
+      if (prevChainId && prevChainId !== LASNA.chainId) {
+        try {
+          await switchChainAsync({ chainId: prevChainId });
+        } catch {
+          // user may reject switch-back, that's ok
+        }
+      }
+    }
+  };
+
   const subscribeLastOrder = async () => {
     if (!lastOrderId) return;
-    setFlowStatus("Subscribing order to Reactive...");
-    await writeReactive({ functionName: "subscribe", args: [ADDRS.hook, poolKey, lastOrderId] });
-    setFlowStatus("Subscribed ✅");
+    setLasnaSubscribing(true);
+    setFlowStatus("Subscribing order on Lasna Reactive Network...");
+    try {
+      await withLasnaChain(async () => {
+        await writeErc20({
+          address: LASNA.reactiveTwamm,
+          abi: reactiveTwammAbi as any,
+          functionName: "subscribe",
+          args: [ADDRS.hook, poolKey, lastOrderId],
+        });
+      });
+      setFlowStatus("Subscribed on Lasna ✅ Reactive cron will auto-execute chunks.");
+    } catch (err: any) {
+      setFlowStatus(`Subscribe failed: ${err.shortMessage || err.message}`);
+    } finally {
+      setLasnaSubscribing(false);
+    }
   };
 
   const executeManual = async () => {
     if (!lastOrderId) return;
-    await writeReactive({ functionName: "batchExecute", args: [[lastOrderId]] });
+    setLasnaSubscribing(true);
+    setFlowStatus("Executing on Lasna...");
+    try {
+      await withLasnaChain(async () => {
+        await writeErc20({
+          address: LASNA.reactiveTwamm,
+          abi: reactiveTwammAbi as any,
+          functionName: "batchExecute",
+          args: [[lastOrderId]],
+        });
+      });
+      setFlowStatus("Manual execute sent ✅");
+    } catch (err: any) {
+      setFlowStatus(`Execute failed: ${err.shortMessage || err.message}`);
+    } finally {
+      setLasnaSubscribing(false);
+    }
   };
 
   const claim = async () => {
     if (!lastOrderId) return;
-    await writeTwamm({ functionName: "claimTWAMMOutput", args: [lastOrderId] });
+    setFlowStatus("Claiming output...");
+    try {
+      await writeTwamm({ functionName: "claimTWAMMOutput", args: [lastOrderId] });
+      setFlowStatus("Output claimed ✅");
+    } catch (err: any) {
+      setFlowStatus(`Claim failed: ${err.shortMessage || err.message}`);
+    }
   };
 
-  const approveInputToken = async () => {
-    await writeErc20({
-      address: tokenIn.address,
-      abi: mockErc20Abi,
-      functionName: "approve",
-      args: [ADDRS.hook, maxUint256],
-    });
+  const cancelOrder = async () => {
+    if (!lastOrderId) return;
+    setFlowStatus("Cancelling order...");
+    try {
+      await writeTwamm({ functionName: "cancelTWAMMOrder", args: [lastOrderId] });
+      setFlowStatus("Order cancelled ✅ Remaining input tokens refunded.");
+    } catch (err: any) {
+      setFlowStatus(`Cancel failed: ${err.shortMessage || err.message}`);
+    }
+  };
+
+  const fundLasnaContract = async () => {
+    setFlowStatus("Funding Lasna contract...");
+    try {
+      await withLasnaChain(async () => {
+        const hash = await sendTransactionAsync({
+          to: LASNA.reactiveTwamm,
+          value: parseUnits(fundAmount || "0", 18),
+        });
+        setFlowStatus(`Funded ${fundAmount} REACT to contract. Tx: ${hash.slice(0, 10)}...`);
+      });
+    } catch (err: any) {
+      setFlowStatus(`Fund failed: ${err.shortMessage || err.message}`);
+    }
+  };
+
+  const coverLasnaDebt = async () => {
+    setFlowStatus("Covering debt on Lasna...");
+    try {
+      await withLasnaChain(async () => {
+        await writeErc20({
+          address: LASNA.reactiveTwamm,
+          abi: reactiveTwammAbi as any,
+          functionName: "coverDebt",
+          args: [],
+        });
+      });
+      setFlowStatus("Debt covered! Contract should be reactivated.");
+    } catch (err: any) {
+      setFlowStatus(`Cover debt failed: ${err.shortMessage || err.message}`);
+    }
   };
 
   const mintDemo = async (token: "USDC" | "REACT") => {
@@ -471,14 +623,14 @@ const Home: NextPage = () => {
             <div className="badge badge-primary badge-outline">{targetNetwork.name}</div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
               <p className="text-base-content/70">Cron</p>
-              <p className="font-semibold">{String(Boolean(cronSubscribed))}</p>
+              <p className="font-semibold">{lasnaCronSubscribed === null ? "..." : String(lasnaCronSubscribed)}</p>
             </div>
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
-              <p className="text-base-content/70">Active</p>
-              <p className="font-semibold">{String(Number(activeOrderCount || 0))}</p>
+              <p className="text-base-content/70">Active (Lasna)</p>
+              <p className="font-semibold">{lasnaActiveOrderCount}</p>
             </div>
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
               <p className="text-base-content/70">Claimable</p>
@@ -488,6 +640,27 @@ const Home: NextPage = () => {
               <p className="text-base-content/70">Lasna Reactive Bal</p>
               <p className="font-semibold">{lasnaReactiveBalance}</p>
             </div>
+            <div className="rounded-lg bg-base-200 p-2 border border-base-300">
+              <p className="text-base-content/70">Debt</p>
+              <p className={`font-semibold ${lasnaDebt !== "0" && lasnaDebt !== "?" ? "text-error" : ""}`}>{lasnaDebt}</p>
+            </div>
+          </div>
+
+          {(lasnaDebt !== "0" && lasnaDebt !== "?" || (lasnaReactiveBalance !== "-" && lasnaReactiveBalance !== "error" && parseFloat(lasnaReactiveBalance) < 0.01)) && (
+            <div className="alert alert-warning text-sm">
+              <span>{lasnaDebt !== "0" && lasnaDebt !== "?" ? "Contract has debt and may be inactive." : "Contract balance is low."} Fund and cover debt to reactivate.</span>
+            </div>
+          )}
+
+          <div className="flex gap-2 items-end">
+            <label className="form-control flex-1">
+              <span className="label-text text-xs">Fund amount (REACT)</span>
+              <input className="input input-bordered input-sm" value={fundAmount} onChange={e => setFundAmount(e.target.value)} />
+            </label>
+            <button className="btn btn-sm btn-outline" onClick={fundLasnaContract}>Fund</button>
+            <button className="btn btn-sm btn-error btn-outline" onClick={coverLasnaDebt} disabled={lasnaDebt === "0" || lasnaDebt === "?"}>
+              Cover Debt
+            </button>
           </div>
         </div>
       </section>
@@ -565,24 +738,24 @@ const Home: NextPage = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <button className="btn btn-outline btn-sm" onClick={() => mintDemo("USDC")}>
+          <div className="flex gap-2">
+            <button className="btn btn-outline btn-sm flex-1" onClick={() => mintDemo("USDC")}>
               Mint USDC
             </button>
-            <button className="btn btn-outline btn-sm" onClick={() => mintDemo("REACT")}>
+            <button className="btn btn-outline btn-sm flex-1" onClick={() => mintDemo("REACT")}>
               Mint REACT
-            </button>
-            <button className="btn btn-outline btn-sm" onClick={approveInputToken}>
-              Approve {tokenIn.symbol}
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button className="btn btn-primary w-full" disabled={!canSubmitOrder || isTwammMining || isReactiveMining} onClick={submitOrder}>
-              <BoltIcon className="h-4 w-4" /> Submit Order
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <button className="btn btn-outline w-full" onClick={approveForHook}>
+              1. Approve {tokenIn.symbol}
             </button>
-            <button className="btn btn-secondary w-full" disabled={!lastOrderId || isReactiveMining} onClick={subscribeLastOrder}>
-              <BoltIcon className="h-4 w-4" /> Subscribe Order
+            <button className="btn btn-primary w-full" disabled={!canSubmitOrder || isTwammMining || lasnaSubscribing} onClick={submitOrder}>
+              <BoltIcon className="h-4 w-4" /> 2. Submit Order
+            </button>
+            <button className="btn btn-secondary w-full" disabled={!lastOrderId || lasnaSubscribing} onClick={subscribeLastOrder}>
+              <BoltIcon className="h-4 w-4" /> 3. Subscribe
             </button>
           </div>
         </div>
@@ -596,12 +769,32 @@ const Home: NextPage = () => {
             <p className="text-xs text-base-content/60 mt-1">Flow status: {flowStatus}</p>
           </div>
 
+          {orderProgress && orderProgress.total > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span>Chunks executed</span>
+                <span className="font-semibold">{orderProgress.executed} / {orderProgress.total}</span>
+              </div>
+              <progress
+                className="progress progress-primary w-full"
+                value={orderProgress.executed}
+                max={orderProgress.total}
+              />
+              {orderProgress.executed >= orderProgress.total && (
+                <p className="text-xs text-success font-semibold">Order complete — claim your output below.</p>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2">
-            <button className="btn btn-outline flex-1" disabled={!lastOrderId || isReactiveMining} onClick={executeManual}>
+            <button className="btn btn-outline flex-1" disabled={!lastOrderId || lasnaSubscribing} onClick={executeManual}>
               <ArrowPathIcon className="h-4 w-4" /> Execute (manual)
             </button>
             <button className="btn btn-accent flex-1" disabled={!lastOrderId || isTwammMining} onClick={claim}>
               Claim
+            </button>
+            <button className="btn btn-error btn-outline flex-1" disabled={!lastOrderId || isTwammMining} onClick={cancelOrder}>
+              <XMarkIcon className="h-4 w-4" /> Cancel
             </button>
           </div>
 
