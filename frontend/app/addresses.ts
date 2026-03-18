@@ -4,9 +4,9 @@
 export const ADDRS = {
   hook: "0x323cDD447000e5F9CCF1E07444898A92548410C0" as const,
   reactive: "0xA7F2D45929c76A2ea5af3aB29d3CF3Ac09Bd4017" as const,
-  usdc: "0x330cCB490151545875eBB8260A093345CE87FC2d" as const,
-  react: "0xa354a2127a43d9E006f9408d2912d01f81eaEEDa" as const,
-  swapExecutor: "0xFE3c121de4834067235BdBe205687ceAa04150Ca" as const,
+  usdc: "0xfC4bCE0c036aC2681121ec8801B4E87122C922F8" as const,
+  react: "0x9496b94e74D6b01F03e02c505e61Ce3d492c533f" as const,
+  swapExecutor: "0xA2cE76584fbA37e5bC60d304f9fb229fe7c7120B" as const,
   callbackProxy: "0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4" as const,
 };
 
