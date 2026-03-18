@@ -324,6 +324,46 @@ Reports `SUCCESS` if chunks executed, or a diagnostic checklist if the callback 
 
 ---
 
+## 🤖 Arbitrage Bot
+
+The project includes a demo arbitrage bot (`script/arb_bot.mjs`) that watches for TWAMM chunk executions and nudges the pool price back toward the market rate.
+
+### What it does
+
+1. **Watches `ChunkExecuted` events** on the TWAMMHook contract
+2. **Fetches REACT market price** from CoinGecko
+3. **Compares pool execution price** vs market price
+4. **Runs micro-swap cycles** (multiple small swaps over ~1 minute) to correct deviations above threshold
+5. **Optional noise swaps** — periodic small swaps to generate price observations for the chart
+
+### Running the bot
+
+```bash
+# Required: a funded Unichain Sepolia wallet
+BOT_PK=0x<your-private-key> node script/arb_bot.mjs
+```
+
+The bot reads addresses from environment variables (auto-synced from `addresses.json` via `.env`). No hardcoded addresses needed.
+
+### Configuration (env vars)
+
+| Variable | Default | Description |
+|---|---|---|
+| `BOT_PK` / `PRIVATE_KEY` | — | Bot wallet private key (required) |
+| `UNICHAIN_RPC` | `https://sepolia.unichain.org` | Unichain RPC URL |
+| `ARB_MAX_DEV_PCT` | `0.75` | Min price deviation % to trigger arb |
+| `ARB_MICRO_SWAPS` | `4` | Number of micro-swaps per correction cycle |
+| `ARB_CYCLE_SECONDS` | `60` | Duration of one arb cycle |
+| `ARB_SWAP_USDC` | `50` | USDC amount per arb cycle (when buying REACT) |
+| `ARB_SWAP_REACT` | `50` | REACT amount per arb cycle (when selling REACT) |
+| `ARB_NOISE_ENABLED` | `false` | Enable periodic noise swaps |
+| `ARB_NOISE_MINUTES` | `3` | Interval between noise swaps |
+| `ARB_NOISE_USDC` | `5` | USDC amount per noise swap |
+
+The bot uses demo `MockERC20` tokens that have a public `mint()` function — it auto-mints tokens when its balance is insufficient.
+
+---
+
 ## 📍 Address Management
 
 All deployed addresses live in `deployments/addresses.json` (single source of truth).
@@ -377,7 +417,6 @@ The `externalContracts.ts` file in the frontend also references the hook/reactiv
 │   ├── v4-periphery/          # Uniswap v4 periphery
 │   └── forge-std/             # Foundry std lib
 ├── foundry.toml               # Foundry config
-├── IDEA-1-TWAMM.md            # Detailed technical spec
 └── README.md                  # This file
 ```
 
