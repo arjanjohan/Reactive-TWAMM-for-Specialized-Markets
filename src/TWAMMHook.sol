@@ -103,6 +103,16 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     event Paused(address account);
     event Unpaused(address account);
 
+    /// @notice Emitted alongside OrderSubmitted with full PoolKey for Reactive RVM auto-registration.
+    event OrderRegisteredReactive(
+        bytes32 indexed orderId,
+        address currency0,
+        address currency1,
+        uint24 fee,
+        int24 tickSpacing,
+        address hooks
+    );
+
     // ============ Constructor ============
     constructor(IPoolManager _POOL_MANAGER, address initialOwner) {
         POOL_MANAGER = _POOL_MANAGER;
@@ -314,6 +324,16 @@ contract TWAMMHook is IHooks, ITWAMMHook {
             numChunks,
             block.timestamp + duration,
             minOutputPerChunk
+        );
+
+        // Emit full PoolKey for Reactive RVM auto-registration
+        emit OrderRegisteredReactive(
+            orderId,
+            Currency.unwrap(key.currency0),
+            Currency.unwrap(key.currency1),
+            key.fee,
+            key.tickSpacing,
+            address(key.hooks)
         );
     }
 

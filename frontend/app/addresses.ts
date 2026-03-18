@@ -2,11 +2,12 @@
 // Source of truth: deployments/addresses.json
 
 export const ADDRS = {
-  hook: "0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0" as const,
-  reactive: "0x7087f17ECB3d5B90F83D561b27147c9Fe67ee1E6" as const,
+  hook: "0x323cDD447000e5F9CCF1E07444898A92548410C0" as const,
+  reactive: "0xA7F2D45929c76A2ea5af3aB29d3CF3Ac09Bd4017" as const,
   usdc: "0x330cCB490151545875eBB8260A093345CE87FC2d" as const,
   react: "0xa354a2127a43d9E006f9408d2912d01f81eaEEDa" as const,
   swapExecutor: "0xFE3c121de4834067235BdBe205687ceAa04150Ca" as const,
+  callbackProxy: "0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4" as const,
 };
 
 export const POOL_MANAGER = "0x00B036B58a818B1BC34d502D3fE730Db729e62AC" as const;
@@ -14,5 +15,6 @@ export const CHAIN_ID = 1301 as const;
 
 export const LASNA = {
   chainId: 5318007 as const,
-  reactiveTwamm: "0xfCf3d3FAB663Fb72C15a7bC92Fd03C2d606133C8" as const,
+  reactiveTwamm: "0xeAD58F77d28d30C3144e7D8CA56F3b54459cEC76" as const,
+  systemContract: "0x0000000000000000000000000000000000fffFfF" as const,
 };

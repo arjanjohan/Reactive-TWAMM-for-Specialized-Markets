@@ -54,8 +54,8 @@ contract DeployTWAMM is Script {
         require(hook == predictedHook, "Hook address mismatch");
         console2.log("TWAMM Hook deployed at:", hook);
 
-        // Deploy reactive contract
-        ReactiveTWAMM reactive = new ReactiveTWAMM();
+        // Deploy reactive contract (on Unichain this is just a reference copy; real one goes to Lasna)
+        ReactiveTWAMM reactive = new ReactiveTWAMM(hook);
         console2.log("ReactiveTWAMM deployed at:", address(reactive));
 
         vm.stopBroadcast();

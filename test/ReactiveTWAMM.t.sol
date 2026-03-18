@@ -28,7 +28,7 @@ contract ReactiveTWAMMTest is Test {
 
     function setUp() public {
         // Deploy in test environment (no REACTIVE_SERVICE code, so vm=true)
-        reactive = new ReactiveTWAMM();
+        reactive = new ReactiveTWAMM(targetHook);
     }
 
     function test_SubscribeAndCheckActive() public {

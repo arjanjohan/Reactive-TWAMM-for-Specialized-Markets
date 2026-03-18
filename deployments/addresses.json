@@ -3,8 +3,8 @@
     "chainId": 1301,
     "poolManager": "0x00B036B58a818B1BC34d502D3fE730Db729e62AC",
     "reactiveCallbackProxy": "0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4",
-    "twammHook": "0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0",
-    "reactiveTwamm": "0x7087f17ECB3d5B90F83D561b27147c9Fe67ee1E6",
+    "twammHook": "0x323cDD447000e5F9CCF1E07444898A92548410C0",
+    "reactiveTwamm": "0xA7F2D45929c76A2ea5af3aB29d3CF3Ac09Bd4017",
     "demo": {
       "usdc": "0x330cCB490151545875eBB8260A093345CE87FC2d",
       "react": "0xa354a2127a43d9E006f9408d2912d01f81eaEEDa",
@@ -13,7 +13,7 @@
   },
   "reactiveLasna": {
     "chainId": 5318007,
-    "reactiveTwamm": "0xfCf3d3FAB663Fb72C15a7bC92Fd03C2d606133C8",
+    "reactiveTwamm": "0xeAD58F77d28d30C3144e7D8CA56F3b54459cEC76",
     "reactiveCallbackProxy": "0x0000000000000000000000000000000000fffFfF"
   }
 }

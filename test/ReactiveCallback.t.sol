@@ -81,7 +81,7 @@ contract ReactiveCallbackTest is Test {
         hook = TWAMMHook(HOOK_ADDRESS);
 
         // Deploy ReactiveTWAMM (vm=true in forge, skips cron subscribe)
-        reactive = new ReactiveTWAMM();
+        reactive = new ReactiveTWAMM(HOOK_ADDRESS);
         reactiveRvmId = address(reactive);
 
         // Configure hook to accept callbacks from our simulated proxy + reactive contract

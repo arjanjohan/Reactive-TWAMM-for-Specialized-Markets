@@ -145,95 +145,47 @@ contract E2E_Step1_SubmitOrder is Script {
 }
 
 // ================================================================
-//  Step 2: Lasna - subscribe + batchExecute
+//  Step 2: Verify Reactive auto-registration
 // ================================================================
+//
+//  With the refactored ReactiveTWAMM, orders are auto-registered in the
+//  RVM when it observes OrderRegisteredReactive events from Unichain.
+//  No manual subscribe() or batchExecute() is needed — the CRON trigger
+//  in react() handles execution automatically.
+//
+//  This step now just checks that the Lasna contract is healthy.
 
 interface IReactiveTWAMM {
     function owner() external view returns (address);
-    function cronSubscribed() external view returns (bool);
+    function targetHook() external view returns (address);
     function getActiveOrderCount() external view returns (uint256);
-    function subscribe(address targetHook, PoolKey calldata poolKey, bytes32 orderId) external;
-    function batchExecute(bytes32[] calldata orderIds) external;
 }
 
 contract E2E_Step2_ReactiveExecute is Script {
-    uint24 constant FEE = 3000;
-    int24 constant TICK_SPACING = 60;
-
-    function run() external {
-        uint256 pk = _loadPk();
-        address signer = vm.addr(pk);
-
+    function run() external view {
         address reactiveAddr = vm.envAddress("LASNA_REACTIVE_TWAMM");
         address hookAddr = vm.envAddress("TWAMM_HOOK");
-        address token0 = vm.envAddress("TOKEN0");
-        address token1 = vm.envAddress("TOKEN1");
-        bytes32 orderId = vm.envBytes32("ORDER_ID");
 
         IReactiveTWAMM reactive = IReactiveTWAMM(reactiveAddr);
 
         console2.log("========================================");
-        console2.log("  E2E Step 2: Reactive Execute (Lasna)");
+        console2.log("  E2E Step 2: Verify Reactive (Lasna)");
         console2.log("========================================");
         console2.log("ReactiveTWAMM:", reactiveAddr);
         console2.log("Target hook:", hookAddr);
-        console2.log("Signer:", signer);
         console2.log("Owner:", reactive.owner());
-        console2.log("cronSubscribed:", reactive.cronSubscribed());
+        console2.log("Configured target hook:", reactive.targetHook());
         console2.log("Balance:", reactiveAddr.balance);
-        console2.log("Active orders before:", reactive.getActiveOrderCount());
-        console2.log("Order ID:");
-        console2.logBytes32(orderId);
+        console2.log("Active orders (RN side):", reactive.getActiveOrderCount());
         console2.log("");
-
-        PoolKey memory key = PoolKey({
-            currency0: Currency.wrap(token0),
-            currency1: Currency.wrap(token1),
-            fee: FEE,
-            tickSpacing: TICK_SPACING,
-            hooks: IHooks(hookAddr)
-        });
-
-        vm.startBroadcast(pk);
-
-        // Subscribe
-        console2.log("-- Subscribing --");
-        reactive.subscribe(hookAddr, key, orderId);
-        console2.log("subscribe() sent");
-
-        // BatchExecute - this should emit Callback event
-        console2.log("");
-        console2.log("-- Executing batchExecute --");
-        bytes32[] memory ids = new bytes32[](1);
-        ids[0] = orderId;
-        reactive.batchExecute(ids);
-        console2.log("batchExecute() sent");
-
-        vm.stopBroadcast();
-
-        console2.log("");
-        console2.log("Active orders after:", reactive.getActiveOrderCount());
-        console2.log("");
-        console2.log("========================================");
-        console2.log("  CHECK THE TX TRACE (-vvv) ABOVE FOR:");
-        console2.log("========================================");
-        console2.log("  - Callback(uint256,address,uint64,bytes) event");
-        console2.log("  - If present: Reactive infra should deliver to Unichain");
-        console2.log("  - If absent: _triggerExecution did not fire");
+        console2.log("NOTE: Orders auto-register in the RVM when OrderRegisteredReactive");
+        console2.log("events are observed from Unichain. The CRON subscription triggers");
+        console2.log("react() which emits Callback events delivered by Reactive infra.");
         console2.log("");
         console2.log("Wait ~60s for Reactive infra to deliver, then run Step 3:");
-        console2.log("  ORDER_ID=<same> \\");
+        console2.log("  ORDER_ID=<from step 1> \\");
         console2.log("  forge script script/E2EReactiveTest.s.sol:E2E_Step3_VerifyDelivery \\");
         console2.log("    --rpc-url $UNICHAIN_RPC -vvv");
-    }
-
-    function _loadPk() internal view returns (uint256) {
-        string memory raw = vm.envString("PRIVATE_KEY");
-        bytes memory b = bytes(raw);
-        if (b.length >= 2 && b[0] == bytes1("0") && (b[1] == bytes1("x") || b[1] == bytes1("X"))) {
-            return vm.parseUint(raw);
-        }
-        return vm.parseUint(string(abi.encodePacked("0x", raw)));
     }
 }
 

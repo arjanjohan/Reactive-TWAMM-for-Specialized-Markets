@@ -30,45 +30,37 @@ Time-weighted automated market maker (TWAMM) hook for Uniswap v4 that uses React
 ## 🚀 Testnet Deployment (Unichain Sepolia + Reactive Lasna)
 
 ### Unichain Sepolia (destination)
-- **TWAMM Hook (latest):** [`0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0`](https://sepolia.uniscan.xyz/address/0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0)
-- **Reactive callback proxy (Unichain Sepolia live):** [`0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4`](https://sepolia.uniscan.xyz/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4)
-- **Reactive callback config tx (latest hook):** [`0x945bdee7a1e49a580babda60d595a60814bc4085fc66c5fc3d3a2aad32d1a3ce`](https://sepolia.uniscan.xyz/tx/0x945bdee7a1e49a580babda60d595a60814bc4085fc66c5fc3d3a2aad32d1a3ce)
-
-Deployment transactions:
-- Hook deploy tx (latest): [`0x422f0e5fdcf3d0483a81821bad5e15b94edb44079c0337ba328c0d483d1c8e83`](https://sepolia.uniscan.xyz/tx/0x422f0e5fdcf3d0483a81821bad5e15b94edb44079c0337ba328c0d483d1c8e83)
-- ReactiveTWAMM deploy on Unichain: [`0x7feb7debab91d30f47334d32e81a40b54a067e9ed4ca6eda159ae18481b670e7`](https://sepolia.uniscan.xyz/tx/0x7feb7debab91d30f47334d32e81a40b54a067e9ed4ca6eda159ae18481b670e7)
-- Smoke order submit on latest hook: [`0x023f32945a50db0e8285a67dce1f51d49062c6ea11bbd92503145e8dd211c8a7`](https://sepolia.uniscan.xyz/tx/0x023f32945a50db0e8285a67dce1f51d49062c6ea11bbd92503145e8dd211c8a7)
+- **TWAMM Hook:** [`0x323cDD447000e5F9CCF1E07444898A92548410C0`](https://sepolia.uniscan.xyz/address/0x323cDD447000e5F9CCF1E07444898A92548410C0)
+- **Reactive callback proxy:** [`0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4`](https://sepolia.uniscan.xyz/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4)
 
 ### Reactive Lasna (automation layer)
-- **ReactiveTWAMM (Lasna, latest):** `0x7Ec9b8802342a119FACCd228b806eC49B4124D17`
-- **Deploy tx (latest):** `0xb8a048765451439bd4cb81dc5b6296adeedf09e585b218b9e84e006bf1b4072f`
-- **Cron subscription tx (`ensureCronSubscription`, latest):** `0x29fa63f6558a07fce197633b164d9c4c5e94fd468b2bca6ea09773c4dd301393`
+- **ReactiveTWAMM:** [`0xeAD58F77d28d30C3144e7D8CA56F3b54459cEC76`](https://lasna.reactscan.net/address/0xeAD58F77d28d30C3144e7D8CA56F3b54459cEC76)
+- **System contract:** `0x0000000000000000000000000000000000fffFfF`
 
-Proof-of-flow txs on Lasna (latest, targeting latest Unichain hook):
-- `subscribe(...)`: `0x8b1ea57725fdd06f614cbed99f4fa49058a34257cce8a30faadecea6261cee93`
-- `batchExecute([orderId])` (emits `Callback` + `ExecutionTriggered`): `0x75f46b714ff69894a4637a2e4ba8ebd7d4b44cd93481e946ee43874fd9c67de0`
+### Architecture: Event-Driven RVM Auto-Registration
 
-### ✅ Reactive Bounty Evidence (copy/paste)
-- Unichain Sepolia hook deployed and callable.
-- Reactive Lasna automation contract deployed by team wallet.
-- On Lasna, team executed:
-  1. `subscribe(...)` for a Unichain hook target
-  2. `batchExecute([orderId])` to trigger execution event
-- Resulting on-chain events emitted on Lasna:
-  - `Subscribed(poolId, orderId)`
-  - `ExecutionTriggered(poolId, orderId, timestamp)`
+The ReactiveTWAMM contract uses a fully event-driven architecture:
 
-This proves a live Reactive-side automation path tied to our Unichain hook target, with verifiable tx hashes above.
+1. On deployment, `initialize()` subscribes to 4 event types:
+   - **CRON10** — periodic trigger (~every 10 blocks on Lasna)
+   - **OrderRegisteredReactive** — auto-registers new orders from Unichain in RVM state
+   - **OrderCancelled** / **OrderCompleted** — auto-deregisters orders
 
-Note: `_triggerExecution` now emits Reactive `Callback(chain_id, contract, gas_limit, payload)` instructions using hardened payload encoding for `executeTWAMMChunkReactive(address rvmId, PoolKey, bytes32)` destination delivery.
+2. When a user submits a TWAMM order on Unichain, the hook emits `OrderRegisteredReactive`. The RVM picks this up via `react()` and stores the order.
+
+3. Each CRON tick, `react()` iterates active orders and emits `Callback` events that the Reactive infra delivers to Unichain as `executeTWAMMChunkReactive()` calls.
+
+**Dual funding requirement:**
+- **Lasna**: The ReactiveTWAMM contract needs REACT (native token) for RVM execution fees via `depositTo(contractAddr)` on system contract
+- **Unichain**: The callback proxy needs ETH deposited via `depositTo(hookAddr)` for cross-chain delivery fees. Reactive infra charges the **target contract** (hook), not the sender
 
 | Milestone | Status | Date |
 |-----------|--------|------|
 | ✅ Foundry Setup | Complete | Feb 27 |
 | ✅ Core TWAMM Hook | Complete | Feb 27 |
-| ✅ Test Coverage | Complete (22/22 local) | Mar 9 |
-| ⏳ Reactive Integration | Pending | Week 2 |
-| ⏳ Frontend (optional) | Pending | Week 3 |
+| ✅ Test Coverage | Complete (32/32) | Mar 9 |
+| ✅ Reactive Integration | Complete | Mar 18 |
+| ✅ Frontend | Complete | Mar 18 |
 
 ---
 
@@ -78,28 +70,34 @@ Large trades in illiquid markets cause massive slippage. Traditional AMMs execut
 
 ### How It Works
 
-1. **User deposits** a large trade into the TWAMM hook
-2. **Hook stores** order parameters (amount, duration, chunk size)
-3. **Reactive Network monitors:**
-   - Time intervals (when to execute next chunk)
-   - Price conditions on other chains (prevent execution if adverse)
-4. **Reactive triggers** `executeTWAMMChunk()` on Unichain
-5. **Hook executes** the chunk via Uniswap v4
-6. **Repeat** until trade complete
+1. **User submits** a large trade into the TWAMM hook on Unichain
+2. **Hook stores** order parameters and emits `OrderRegisteredReactive`
+3. **ReactVM auto-registers** the order by listening to the event via `react()`
+4. **CRON fires** every ~10 blocks on Lasna, triggering `react()` which emits `Callback` events
+5. **Reactive infra delivers** callbacks to Unichain, executing `executeTWAMMChunkReactive()`
+6. **Hook executes** each chunk as a swap via Uniswap v4
+7. **Repeat** until all chunks complete, then user claims output
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│  User Frontend  │───▶│ Uniswap v4 Hook  │◀───│    Reactive     │
-│ (React - Wk 3)  │    │   (TWAMM Logic)    │    │    Contract     │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌──────────────────────┐    ┌──────────────────────┐
+│  User Frontend  │───▶│   Unichain Sepolia    │    │   Reactive Lasna     │
+│  (Next.js App)  │    │                        │    │                      │
+│                 │    │  TWAMMHook             │◀───│  ReactiveTWAMM       │
+│  - Submit order │    │  - submitTWAMMOrder()  │    │  - react() (RVM)     │
+│  - Fund both    │    │  - executeTWAMMChunk() │    │  - CRON10 trigger    │
+│    chains       │    │                        │    │  - Auto-register     │
+│  - Monitor      │    │  Callback Proxy        │    │    orders via events │
+│                 │    │  - depositTo() (fund)  │    │                      │
+│                 │    │  - delivers callbacks  │    │  System Contract     │
+│                 │    │                        │    │  - depositTo() (fund)│
+└─────────────────┘    └──────────────────────┘    └──────────────────────┘
                               │
                               ▼
                       ┌──────────────────┐
-                      │     Unichain     │
                       │  Uniswap v4 Pool │
                       └──────────────────┘
 ```
@@ -227,28 +225,58 @@ cast send $TWAMM_HOOK \
   --rpc-url $UNICHAIN_RPC --private-key $PRIVATE_KEY
 ```
 
-### Step 5: Deploy ReactiveTWAMM to Lasna (if needed)
-
-Only required on first deploy or if the Lasna contract needs changes. The existing Lasna deployment can be reused across hook redeploys since new subscriptions pass the hook address dynamically.
+### Step 5: Deploy ReactiveTWAMM to Lasna
 
 ```bash
-# Check Lasna wallet balance first
-forge script script/CheckLasnaBalance.s.sol --rpc-url https://kopli-rpc.rkt.ink
-
-# Deploy (funds contract with 0.1 ETH for Reactive service fees)
-forge script script/DeployReactiveLasna.s.sol \
-  --rpc-url https://kopli-rpc.rkt.ink --broadcast -vvv
+# Deploy (funds contract with 0.5 REACT for RVM execution fees)
+TWAMM_HOOK=$TWAMM_HOOK forge script script/DeployReactiveLasna.s.sol \
+  --rpc-url $LASNA_RPC --broadcast -vvv
 ```
 
 Update `reactiveLasna.reactiveTwamm` in `addresses.json` and re-sync.
 
-### Step 6: Setup cron subscription on Lasna
+### Step 6: Initialize subscriptions on Lasna
 
-One-time bootstrap so the Reactive cron fires `react()` on each block to check for executable orders.
+Must be called separately after deployment (cannot be done in constructor on Reactive Network):
 
 ```bash
-forge script script/SetupReactiveCron.s.sol \
-  --rpc-url https://kopli-rpc.rkt.ink --broadcast -vvv
+cast send $LASNA_REACTIVE_TWAMM "initialize()" \
+  --rpc-url $LASNA_RPC --private-key $PRIVATE_KEY
+```
+
+### Step 7: Fund callback delivery on Unichain
+
+The callback proxy on Unichain needs ETH to pay for cross-chain callback delivery. **Important:** Reactive infra charges the **target contract** (the hook that receives callbacks), not the sender. Fund using `depositTo(hookAddress)`:
+
+```bash
+cast send $REACTIVE_CALLBACK_UNICHAIN \
+  "depositTo(address)" $TWAMM_HOOK \
+  --rpc-url $UNICHAIN_RPC --private-key $PRIVATE_KEY \
+  --value 0.02ether
+```
+
+Check reserves and debt:
+```bash
+cast call $REACTIVE_CALLBACK_UNICHAIN \
+  "reserves(address)(uint256)" $TWAMM_HOOK \
+  --rpc-url $UNICHAIN_RPC
+
+cast call $REACTIVE_CALLBACK_UNICHAIN \
+  "debts(address)(uint256)" $TWAMM_HOOK \
+  --rpc-url $UNICHAIN_RPC
+```
+
+If the hook has debt, callbacks will be silently dropped. The error on ReactScan reads: "We were unable to send callback because the destination Smart Contract is in debt".
+
+### Step 8: Fund RVM execution on Lasna
+
+The ReactiveTWAMM contract needs REACT (native token) for RVM execution fees:
+
+```bash
+cast send 0x0000000000000000000000000000000000fffFfF \
+  "depositTo(address)" $LASNA_REACTIVE_TWAMM \
+  --rpc-url $LASNA_RPC --private-key $PRIVATE_KEY \
+  --value 0.5ether
 ```
 
 ### Verification

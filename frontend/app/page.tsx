@@ -74,7 +74,7 @@ const lasnaChain = defineChain({
 const Home: NextPage = () => {
   const { address, chainId: walletChainId } = useAccount();
   const publicClient = usePublicClient();
-  const { targetNetwork } = useTargetNetwork();
+  useTargetNetwork();
   const { switchChainAsync } = useSwitchChain();
 
   const [usdcToReact, setUsdcToReact] = useState(true);
@@ -91,6 +91,9 @@ const Home: NextPage = () => {
   const [orderProgress, setOrderProgress] = useState<{ executed: number; total: number } | null>(null);
   const [lasnaSubscribing, setLasnaSubscribing] = useState(false);
   const [fundAmount, setFundAmount] = useState("0.1");
+  const [callbackReserves, setCallbackReserves] = useState<string>("-");
+  const [callbackDebt, setCallbackDebt] = useState<string>("0");
+  const [callbackFundAmount, setCallbackFundAmount] = useState("0.02");
 
   const tokenIn = useMemo(
     () =>
@@ -305,13 +308,13 @@ const Home: NextPage = () => {
         const bal = await lasnaClient.getBalance({ address: LASNA.reactiveTwamm });
         if (!cancelled) setLasnaReactiveBalance(formatEther(bal));
 
-        const cronStatus = await lasnaClient.readContract({
+        const initStatus = await lasnaClient.readContract({
           address: LASNA.reactiveTwamm,
           abi: reactiveTwammAbi as any,
-          functionName: "cronSubscribed",
+          functionName: "initialized",
           args: [],
         });
-        if (!cancelled) setLasnaCronSubscribed(cronStatus as boolean);
+        if (!cancelled) setLasnaCronSubscribed(initStatus as boolean);
 
         const activeCount = await lasnaClient.readContract({
           address: LASNA.reactiveTwamm,
@@ -322,10 +325,11 @@ const Home: NextPage = () => {
         if (!cancelled) setLasnaActiveOrderCount(Number(activeCount));
 
         // Fetch debt from Reactive system contract
+        const debtsAbi = [{ type: "function", name: "debts", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" }] as const;
         try {
           const debt = await lasnaClient.readContract({
-            address: "0x0000000000000000000000000000000000fffFfF",
-            abi: [{ type: "function", name: "debts", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" }] as const,
+            address: LASNA.systemContract,
+            abi: debtsAbi,
             functionName: "debts",
             args: [LASNA.reactiveTwamm],
           });
@@ -348,6 +352,50 @@ const Home: NextPage = () => {
       clearInterval(id);
     };
   }, []);
+
+  // Poll Unichain callback proxy reserves/debt for the deployer (RVM ID)
+  useEffect(() => {
+    let cancelled = false;
+    const proxyAbi = [
+      { type: "function", name: "reserves", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" },
+      { type: "function", name: "debts", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" },
+      { type: "function", name: "depositTo", inputs: [{ name: "", type: "address" }], outputs: [], stateMutability: "payable" },
+    ] as const;
+
+    const fetchCallbackState = async () => {
+      if (!publicClient) return;
+      try {
+        // Callback delivery fees are charged to the TARGET contract (hook), not the sender
+        const reserves = await publicClient.readContract({
+          address: ADDRS.callbackProxy,
+          abi: proxyAbi,
+          functionName: "reserves",
+          args: [ADDRS.hook],
+        });
+        if (!cancelled) setCallbackReserves(formatEther(reserves as bigint));
+
+        const debt = await publicClient.readContract({
+          address: ADDRS.callbackProxy,
+          abi: proxyAbi,
+          functionName: "debts",
+          args: [ADDRS.hook],
+        });
+        if (!cancelled) setCallbackDebt(formatEther(debt as bigint));
+      } catch {
+        if (!cancelled) {
+          setCallbackReserves("?");
+          setCallbackDebt("?");
+        }
+      }
+    };
+
+    fetchCallbackState();
+    const id = setInterval(fetchCallbackState, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [publicClient]);
 
   // Poll order progress from Unichain TWAMMHook
   useEffect(() => {
@@ -604,6 +652,22 @@ const Home: NextPage = () => {
     }
   };
 
+  const fundCallbackProxy = async () => {
+    setFlowStatus("Funding callback delivery for hook...");
+    try {
+      // Reactive infra charges the TARGET contract (hook) for callback delivery
+      const hookAddrPadded = ADDRS.hook.slice(2).toLowerCase().padStart(64, "0");
+      const hash = await sendTransactionAsync({
+        to: ADDRS.callbackProxy,
+        value: parseUnits(callbackFundAmount || "0", 18),
+        data: `0xb760faf9${hookAddrPadded}` as `0x${string}`, // depositTo(hookAddress)
+      });
+      setFlowStatus(`Funded callback proxy for hook with ${callbackFundAmount} ETH. Tx: ${hash.slice(0, 10)}...`);
+    } catch (err: any) {
+      setFlowStatus(`Callback fund failed: ${err.shortMessage || err.message}`);
+    }
+  };
+
   const mintDemo = async (token: "USDC" | "REACT") => {
     if (!address) return;
     const tokenCfg = token === "USDC" ? { address: ADDRS.usdc, decimals: 6, amount: "10000" } : { address: ADDRS.react, decimals: 18, amount: "10000" };
@@ -621,12 +685,12 @@ const Home: NextPage = () => {
         <div className="card-body">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-black">Reactive TWAMM</h1>
-            <div className="badge badge-primary badge-outline">Reactive Lasna Testnet</div>
+            <div className="badge badge-primary badge-outline">Reactive Lasna</div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
-              <p className="text-base-content/70">Cron</p>
+              <p className="text-base-content/70">Initialized</p>
               <p className="font-semibold">{lasnaCronSubscribed === null ? "..." : String(lasnaCronSubscribed)}</p>
             </div>
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
@@ -662,6 +726,38 @@ const Home: NextPage = () => {
             <button className="btn btn-sm btn-error btn-outline" onClick={coverLasnaDebt} disabled={lasnaDebt === "0" || lasnaDebt === "?"}>
               Cover Debt
             </button>
+          </div>
+
+          <div className="divider text-xs text-base-content/50 my-1"> </div>
+
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-black">Reactive TWAMM</h1>
+            <span className="badge badge-outline badge-sm border-[#FC0FC0] text-[#FC0FC0]">Unichain Sepolia</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-lg bg-base-200 p-2 border border-base-300">
+              <p className="text-base-content/70">Callback Reserves</p>
+              <p className="font-semibold">{callbackReserves} ETH</p>
+            </div>
+            <div className="rounded-lg bg-base-200 p-2 border border-base-300">
+              <p className="text-base-content/70">Callback Debt</p>
+              <p className={`font-semibold ${callbackDebt !== "0" && callbackDebt !== "?" ? "text-error" : ""}`}>{callbackDebt} ETH</p>
+            </div>
+          </div>
+
+          {(callbackDebt !== "0" && callbackDebt !== "?" || (callbackReserves !== "-" && callbackReserves !== "?" && parseFloat(callbackReserves) < 0.005)) && (
+            <div className="alert alert-warning text-sm">
+              <span>{callbackDebt !== "0" && callbackDebt !== "?" ? "Callback delivery has debt." : "Callback reserves are low."} Fund the callback proxy to enable cross-chain delivery.</span>
+            </div>
+          )}
+
+          <div className="flex gap-2 items-end">
+            <label className="form-control flex-1">
+              <span className="label-text text-xs">Fund amount (ETH on Unichain)</span>
+              <input className="input input-bordered input-sm" value={callbackFundAmount} onChange={e => setCallbackFundAmount(e.target.value)} />
+            </label>
+            <button className="btn btn-sm btn-outline" onClick={fundCallbackProxy}>Fund Callback</button>
           </div>
         </div>
       </section>
