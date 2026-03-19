@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { NextPage } from "next";
 import { useAccount, usePublicClient, useReadContract, useSendTransaction, useSwitchChain, useWriteContract } from "wagmi";
 import {
+  concatHex,
   createPublicClient,
   decodeEventLog,
   defineChain,
@@ -16,12 +17,14 @@ import {
   maxUint256,
   parseAbiItem,
   parseUnits,
+  toHex,
 } from "viem";
 import { ArrowPathIcon, ArrowsUpDownIcon, BoltIcon, ChartBarIcon, ClockIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import twammHookAbi from "~~/contracts/abi/TWAMMHook.json";
 import reactiveTwammAbi from "~~/contracts/abi/ReactiveTWAMM.json";
+import { Address } from "@scaffold-ui/components";
 import { useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
-import { ADDRS, LASNA, POOL_MANAGER } from "./addresses";
+import { ADDRS, CHAIN_ID, LASNA, POOL_MANAGER } from "./addresses";
 
 type DurationUnit = "minutes" | "hours" | "days";
 
@@ -33,9 +36,23 @@ const DURATION_MULTIPLIER: Record<DurationUnit, number> = {
 
 const MIN_CHUNK_DURATION_SECONDS = 60;
 const MAX_CHUNKS = 100;
+const POOLS_SLOT = 6n;
+const Q96 = 2 ** 96;
+const MASK_160 = (1n << 160n) - 1n;
+const MASK_24 = (1n << 24n) - 1n;
 const swapEvent = parseAbiItem(
   "event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)",
 );
+
+const extsloadAbi = [
+  {
+    type: "function",
+    name: "extsload",
+    stateMutability: "view",
+    inputs: [{ name: "slot", type: "bytes32" }],
+    outputs: [{ name: "value", type: "bytes32" }],
+  },
+] as const;
 
 const mockErc20Abi = [
   {
@@ -65,15 +82,15 @@ const lasnaChain = defineChain({
   name: "Reactive Lasna",
   nativeCurrency: { name: "REACT", symbol: "REACT", decimals: 18 },
   rpcUrls: {
-    default: { http: [process.env.NEXT_PUBLIC_LASNA_RPC || "https://kopli-rpc.rkt.ink"] },
-    public: { http: [process.env.NEXT_PUBLIC_LASNA_RPC || "https://kopli-rpc.rkt.ink"] },
+    default: { http: [process.env.NEXT_PUBLIC_LASNA_RPC || "https://lasna-rpc.rnk.dev"] },
+    public: { http: [process.env.NEXT_PUBLIC_LASNA_RPC || "https://lasna-rpc.rnk.dev"] },
   },
   testnet: true,
 });
 
 const Home: NextPage = () => {
   const { address, chainId: walletChainId } = useAccount();
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({ chainId: CHAIN_ID });
   useTargetNetwork();
   const { switchChainAsync } = useSwitchChain();
 
@@ -112,6 +129,7 @@ const Home: NextPage = () => {
   );
 
   const { data: tokenInBalanceRaw } = useReadContract({
+    chainId: CHAIN_ID,
     address: tokenIn.address,
     abi: erc20Abi,
     functionName: "balanceOf",
@@ -120,10 +138,20 @@ const Home: NextPage = () => {
   });
 
   const { data: tokenOutBalanceRaw } = useReadContract({
+    chainId: CHAIN_ID,
     address: tokenOut.address,
     abi: erc20Abi,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
+    query: { enabled: Boolean(address) },
+  });
+
+  const { data: tokenInAllowanceRaw } = useReadContract({
+    chainId: CHAIN_ID,
+    address: tokenIn.address,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address ? [address, ADDRS.hook] : undefined,
     query: { enabled: Boolean(address) },
   });
 
@@ -150,17 +178,18 @@ const Home: NextPage = () => {
     return Math.max(1, Math.min(MAX_CHUNKS, Math.floor(durationSeconds / MIN_CHUNK_DURATION_SECONDS)));
   }, [durationSeconds]);
 
-  const estimatedTotalOut = useMemo(() => {
-    const n = Number(amountIn || 0);
-    if (!Number.isFinite(n) || n <= 0) return "0";
-    return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
-  }, [amountIn]);
+  const amountInBase = useMemo(() => {
+    try {
+      return parseUnits(amountIn || "0", tokenIn.decimals);
+    } catch {
+      return 0n;
+    }
+  }, [amountIn, tokenIn.decimals]);
 
-  const estimatedPerChunkOut = useMemo(() => {
-    const n = Number(amountIn || 0);
-    if (!Number.isFinite(n) || n <= 0 || chunkCount === 0) return "0";
-    return (n / chunkCount).toLocaleString(undefined, { maximumFractionDigits: 6 });
-  }, [amountIn, chunkCount]);
+  const hasEnoughAllowance = useMemo(() => {
+    if (!address || amountInBase <= 0n) return false;
+    return (tokenInAllowanceRaw as bigint | undefined ?? 0n) >= amountInBase;
+  }, [address, amountInBase, tokenInAllowanceRaw]);
 
   const poolKey = useMemo(() => {
     const [currency0, currency1] =
@@ -177,6 +206,7 @@ const Home: NextPage = () => {
 
   const [lasnaCronSubscribed, setLasnaCronSubscribed] = useState<boolean | null>(null);
   const { data: claimableOutputRaw } = useReadContract({
+    chainId: CHAIN_ID,
     address: ADDRS.hook,
     abi: twammHookAbi as any,
     functionName: "claimableOutput",
@@ -224,18 +254,76 @@ const Home: NextPage = () => {
       chunkOut: string;
     }[]
   >([]);
+  const [livePoolPrice, setLivePoolPrice] = useState<number | null>(null);
+
+  const latestObservedPrice = useMemo(() => {
+    const latestPoint = chartPoints[chartPoints.length - 1];
+    return latestPoint?.execPrice && Number.isFinite(latestPoint.execPrice) && latestPoint.execPrice > 0
+      ? latestPoint.execPrice
+      : null;
+  }, [chartPoints]);
+
+  const displayPrice = livePoolPrice ?? latestObservedPrice;
+
+  const estimatedTotalOut = useMemo(() => {
+    const n = Number(amountIn || 0);
+    if (!Number.isFinite(n) || n <= 0) return "0";
+    if (!displayPrice || chunkCount === 0) return "—";
+
+    const chunkIn = n / chunkCount;
+    const perChunkOut = usdcToReact ? chunkIn / displayPrice : chunkIn * displayPrice;
+    const estimatedOut = perChunkOut * chunkCount;
+    if (!Number.isFinite(estimatedOut) || estimatedOut <= 0) return "0";
+    return estimatedOut.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  }, [amountIn, chunkCount, displayPrice, usdcToReact]);
+
+  const estimatedPerChunkOut = useMemo(() => {
+    const totalOut = Number(estimatedTotalOut.replaceAll(",", ""));
+    if (!Number.isFinite(totalOut) || totalOut <= 0 || chunkCount === 0) return estimatedTotalOut === "—" ? "—" : "0";
+    return (totalOut / chunkCount).toLocaleString(undefined, { maximumFractionDigits: 6 });
+  }, [chunkCount, estimatedTotalOut]);
 
   useEffect(() => {
     let cancelled = false;
 
+    const getPoolStateSlot = () => keccak256(concatHex([poolId, toHex(POOLS_SLOT, { size: 32 })]));
+
+    const fetchLivePoolPrice = async () => {
+      if (!publicClient) return;
+      try {
+        const slot0 = await publicClient.readContract({
+          address: POOL_MANAGER,
+          abi: extsloadAbi,
+          functionName: "extsload",
+          args: [getPoolStateSlot()],
+        });
+
+        const packed = BigInt(slot0 as `0x${string}`);
+        const sqrtPriceX96 = packed & MASK_160;
+        const dec0 = poolKey.currency0.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
+        const dec1 = poolKey.currency1.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
+        const rawToken1PerToken0 = (Number(sqrtPriceX96) / Q96) ** 2;
+        const humanToken1PerToken0 = rawToken1PerToken0 * 10 ** (dec0 - dec1);
+        const reactIsToken0 = poolKey.currency0.toLowerCase() === ADDRS.react.toLowerCase();
+        const reactUsd = reactIsToken0 ? humanToken1PerToken0 : 1 / humanToken1PerToken0;
+
+        if (!cancelled && Number.isFinite(reactUsd) && reactUsd > 0) {
+          setLivePoolPrice(reactUsd);
+        }
+      } catch {
+        if (!cancelled) setLivePoolPrice(null);
+      }
+    };
+
     const fetchSwapSeries = async () => {
       if (!publicClient) return;
       try {
+        const latestBlock = await publicClient.getBlockNumber();
         const logs = await publicClient.getLogs({
           address: POOL_MANAGER,
           event: swapEvent,
           args: { id: poolId },
-          fromBlock: 0n,
+          fromBlock: latestBlock > 200_000n ? latestBlock - 200_000n : 0n,
           toBlock: "latest",
         });
 
@@ -285,10 +373,13 @@ const Home: NextPage = () => {
       }
     };
 
+    fetchLivePoolPrice();
     fetchSwapSeries();
+    const priceId = setInterval(fetchLivePoolPrice, 8000);
     const id = setInterval(fetchSwapSeries, 10000);
     return () => {
       cancelled = true;
+      clearInterval(priceId);
       clearInterval(id);
     };
   }, [publicClient, poolId, poolKey]);
@@ -500,41 +591,49 @@ const Home: NextPage = () => {
   };
 
   const submitOrder = async () => {
-    setFlowStatus("Submitting order...");
-    const amountBase = parseUnits(amountIn || "0", tokenIn.decimals);
-    const minOutBase = parseUnits(minOutputPerChunk || "0", tokenOut.decimals);
+    try {
+      setFlowStatus("Submitting order...");
+      const minOutBase = parseUnits(minOutputPerChunk || "0", tokenOut.decimals);
 
-    const submitHash = await writeTwamm({
-      functionName: "submitTWAMMOrder",
-      args: [poolKey, amountBase, BigInt(durationSeconds), tokenIn.address as `0x${string}`, tokenOut.address as `0x${string}`, minOutBase],
-    });
+      const submitHash = await writeTwamm({
+        functionName: "submitTWAMMOrder",
+        args: [poolKey, amountInBase, BigInt(durationSeconds), tokenIn.address as `0x${string}`, tokenOut.address as `0x${string}`, minOutBase],
+      });
 
-    setFlowStatus("Waiting for tx receipt...");
-    const receipt = await publicClient?.waitForTransactionReceipt({ hash: submitHash });
-    if (!receipt) {
-      setFlowStatus("No receipt found");
-      return;
-    }
-
-    let parsedOrderId: `0x${string}` | null = null;
-    for (const log of receipt.logs) {
-      try {
-        const decoded = decodeEventLog({ abi: twammHookAbi as any, data: log.data, topics: log.topics }) as any;
-        if (decoded.eventName === "OrderSubmitted") {
-          parsedOrderId = decoded.args.orderId as `0x${string}`;
-          break;
-        }
-      } catch {
-        // ignore unrelated logs
+      setFlowStatus("Waiting for tx receipt...");
+      const receipt = await publicClient?.waitForTransactionReceipt({ hash: submitHash });
+      if (!receipt) {
+        setFlowStatus("No receipt found");
+        return;
       }
-    }
 
-    if (!parsedOrderId) {
-      setFlowStatus("Order submitted, but orderId not found in logs");
-      return;
+      let parsedOrderId: `0x${string}` | null = null;
+      for (const log of receipt.logs) {
+        try {
+          const decoded = decodeEventLog({ abi: twammHookAbi as any, data: log.data, topics: log.topics }) as any;
+          if (decoded.eventName === "OrderSubmitted") {
+            parsedOrderId = decoded.args.orderId as `0x${string}`;
+            break;
+          }
+        } catch {
+          // ignore unrelated logs
+        }
+      }
+
+      if (!parsedOrderId) {
+        setFlowStatus("Order submitted, but orderId not found in logs");
+        return;
+      }
+      setLastOrderId(parsedOrderId);
+      setFlowStatus("Order submitted ✅ Now click Subscribe.");
+    } catch (err: any) {
+      const message = err?.shortMessage || err?.message || "Submit failed";
+      if (message.includes("ERC20InsufficientAllowance") || message.includes("0xfb8f41b2")) {
+        setFlowStatus(`Submit failed: approve ${tokenIn.symbol} for the current hook first.`);
+        return;
+      }
+      setFlowStatus(`Submit failed: ${message}`);
     }
-    setLastOrderId(parsedOrderId);
-    setFlowStatus("Order submitted ✅ Now click Subscribe.");
   };
 
   const withLasnaChain = async (fn: () => Promise<void>) => {
@@ -684,9 +783,13 @@ const Home: NextPage = () => {
       <section className="card bg-base-100 border border-primary/30 shadow-xl shadow-primary/10">
         <div className="card-body">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-black">Reactive TWAMM</h1>
+            <h1 className="text-2xl font-black">ReactiveTWAMM.sol</h1>
             <div className="badge badge-primary badge-outline">Reactive Lasna</div>
-          </div>
+          </div>            <Address
+              address={LASNA.reactiveTwamm}
+              blockExplorerAddressLink={`https://lasna.reactscan.net/address/${LASNA.reactiveTwamm}`}
+            />
+
 
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
@@ -731,10 +834,12 @@ const Home: NextPage = () => {
           <div className="divider text-xs text-base-content/50 my-1"> </div>
 
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-black">Reactive TWAMM</h1>
+            <h1 className="text-2xl font-black">TWAMMHook.sol</h1>
             <span className="badge badge-outline badge-sm border-[#FC0FC0] text-[#FC0FC0]">Unichain Sepolia</span>
-          </div>
-
+          </div>        <Address
+              address={ADDRS.hook}
+              blockExplorerAddressLink={`https://unichain-sepolia.blockscout.com/address/${ADDRS.hook}`}
+            />
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
               <p className="text-base-content/70">Callback Reserves</p>
@@ -835,6 +940,13 @@ const Home: NextPage = () => {
             </div>
           </div>
 
+          <div className="rounded-lg bg-base-200 p-2 border border-base-300 text-xs">
+            <p className="text-base-content/70">Latest pool price</p>
+            <p className="font-semibold">
+              {displayPrice ? `${displayPrice.toFixed(6)} USDC per REACT` : "Waiting for pool state..."}
+            </p>
+          </div>
+
           <div className="flex gap-2">
             <button className="btn btn-outline btn-sm flex-1" onClick={() => mintDemo("USDC")}>
               Mint USDC
@@ -846,15 +958,19 @@ const Home: NextPage = () => {
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <button className="btn btn-outline w-full" onClick={approveForHook}>
-              1. Approve {tokenIn.symbol}
+              {hasEnoughAllowance ? `1. ${tokenIn.symbol} Approved` : `1. Approve ${tokenIn.symbol}`}
             </button>
-            <button className="btn btn-primary w-full" disabled={!canSubmitOrder || isTwammMining || lasnaSubscribing} onClick={submitOrder}>
+            <button className="btn btn-primary w-full" disabled={!canSubmitOrder || !hasEnoughAllowance || isTwammMining || lasnaSubscribing} onClick={submitOrder}>
               <BoltIcon className="h-4 w-4" /> 2. Submit Order
             </button>
             <button className="btn btn-secondary w-full" disabled={!lastOrderId || lasnaSubscribing} onClick={subscribeLastOrder}>
               <BoltIcon className="h-4 w-4" /> 3. Subscribe
             </button>
           </div>
+
+          {!hasEnoughAllowance && Number(amountIn || 0) > 0 && (
+            <p className="text-xs text-warning">Approve the current input token for this hook before submitting.</p>
+          )}
         </div>
       </section>
 

@@ -24,10 +24,13 @@ contract DeployTWAMM is Script {
     // Required hook flags: afterInitialize (0x1000) + beforeSwap (0x80) + afterSwap (0x40)
     uint160 constant REQUIRED_FLAGS = 0x10C0;
     uint160 constant ALL_HOOK_MASK = uint160((1 << 14) - 1);
+    uint256 constant MAX_SALT_SEARCH = 5_000_000;
 
     function run() public {
         uint256 deployerPrivateKey = _loadPrivateKey();
         address deployer = vm.addr(deployerPrivateKey);
+        uint256 saltStart = _envUintOr("HOOK_SALT_START", 0);
+        address skipHook = _envAddressOr("HOOK_ADDRESS_TO_AVOID", address(0));
 
         console2.log("========================================");
         console2.log("Deploying TWAMM Hook to Unichain Sepolia");
@@ -36,12 +39,14 @@ contract DeployTWAMM is Script {
         console2.log("Chain ID:", block.chainid);
         console2.log("PoolManager:", POOL_MANAGER_SEPOLIA);
         console2.log("Reactive Callback:", REACTIVE_CALLBACK_SEPOLIA);
+        console2.log("Salt search start:", saltStart);
+        console2.log("Skip hook address:", skipHook);
         console2.log("");
 
         bytes memory constructorArgs = abi.encode(IPoolManager(POOL_MANAGER_SEPOLIA), deployer);
         bytes memory initCode = abi.encodePacked(type(TWAMMHook).creationCode, constructorArgs);
 
-        (bytes32 salt, address predictedHook) = _mineSalt(initCode, REQUIRED_FLAGS);
+        (bytes32 salt, address predictedHook) = _mineSalt(initCode, REQUIRED_FLAGS, saltStart, skipHook);
         console2.log("Found salt:");
         console2.logBytes32(salt);
         console2.log("Predicted hook address:", predictedHook);
@@ -68,13 +73,17 @@ contract DeployTWAMM is Script {
         console2.log("REACTIVE_TWAMM_ADDRESS=", address(reactive));
     }
 
-    function _mineSalt(bytes memory initCode, uint160 flags) internal view returns (bytes32 salt, address hookAddr) {
+    function _mineSalt(bytes memory initCode, uint160 flags, uint256 start, address skipHook)
+        internal
+        view
+        returns (bytes32 salt, address hookAddr)
+    {
         bytes32 initCodeHash = keccak256(initCode);
 
-        for (uint256 i = 0; i < 5_000_000; i++) {
+        for (uint256 i = start; i < start + MAX_SALT_SEARCH; i++) {
             salt = bytes32(i);
             hookAddr = vm.computeCreate2Address(salt, initCodeHash, CREATE2_DEPLOYER);
-            if ((uint160(hookAddr) & ALL_HOOK_MASK) == flags) {
+            if ((uint160(hookAddr) & ALL_HOOK_MASK) == flags && hookAddr != skipHook) {
                 return (salt, hookAddr);
             }
         }
@@ -108,5 +117,21 @@ contract DeployTWAMM is Script {
         }
 
         return vm.parseUint(string(abi.encodePacked("0x", raw)));
+    }
+
+    function _envUintOr(string memory key, uint256 fallbackValue) internal view returns (uint256) {
+        try vm.envUint(key) returns (uint256 value) {
+            return value;
+        } catch {
+            return fallbackValue;
+        }
+    }
+
+    function _envAddressOr(string memory key, address fallbackAddr) internal view returns (address) {
+        try vm.envAddress(key) returns (address value) {
+            return value;
+        } catch {
+            return fallbackAddr;
+        }
     }
 }

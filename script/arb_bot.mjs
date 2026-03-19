@@ -205,6 +205,12 @@ function getPoolKey() {
   };
 }
 
+function getSwapPriceLimit(tokenIn) {
+  const key = getPoolKey();
+  const zeroForOne = norm(tokenIn) === norm(key.currency0);
+  return zeroForOne ? 4295128740n : 340282366920938463463374607431768211455n;
+}
+
 async function ensureAllowanceAndBalance({ publicClient, walletClient, account, token, decimals, required }) {
   const bal = await publicClient.readContract({
     address: token,
@@ -268,9 +274,7 @@ async function doMicroSwapCycle({ publicClient, walletClient, account, buyReact 
 
     await ensureAllowanceAndBalance({ publicClient, walletClient, account, token: tokenIn, decimals, required: amountIn });
 
-    const sqrtPriceLimitX96 = buyReact
-      ? 4295128740n // zeroForOne true (token0->token1) conservative bound
-      : 340282366920938463463374607431768211455n;
+    const sqrtPriceLimitX96 = getSwapPriceLimit(tokenIn);
 
     const h = await walletClient.writeContract({
       account,

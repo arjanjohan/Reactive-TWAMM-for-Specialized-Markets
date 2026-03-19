@@ -110,6 +110,15 @@ contract TWAMMHookTest is Test {
 
     function test_Constructor() public view {
         assertEq(address(hook.poolManager()), address(poolManager));
+        assertFalse(hook.processOrdersOnAfterSwap());
+    }
+
+    function test_SetProcessOrdersOnAfterSwap() public {
+        hook.setProcessOrdersOnAfterSwap(false);
+        assertFalse(hook.processOrdersOnAfterSwap());
+
+        hook.setProcessOrdersOnAfterSwap(true);
+        assertTrue(hook.processOrdersOnAfterSwap());
     }
 
     function test_RevertIf_InvalidAmount() public {
@@ -218,6 +227,12 @@ contract TWAMMHookTest is Test {
         vm.prank(bob);
         vm.expectRevert(TWAMMHook.TWAMMHook__OnlyOwner.selector);
         hook.setPaused(true);
+    }
+
+    function test_RevertIf_SetProcessOrdersOnAfterSwap_NonOwner() public {
+        vm.prank(bob);
+        vm.expectRevert(TWAMMHook.TWAMMHook__OnlyOwner.selector);
+        hook.setProcessOrdersOnAfterSwap(false);
     }
 
     function test_RevertIf_SubmitWhenPaused() public {

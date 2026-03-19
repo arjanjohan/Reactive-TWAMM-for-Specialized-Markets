@@ -55,6 +55,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     IPoolManager public immutable POOL_MANAGER;
     address public owner;
     bool public paused;
+    bool public processOrdersOnAfterSwap = false;
 
     // Reactive callback auth (destination-side hardening)
     address public reactiveCallbackProxy;
@@ -102,6 +103,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
     event TWAMMEnabled(PoolId indexed poolId);
     event Paused(address account);
     event Unpaused(address account);
+    event AfterSwapProcessingSet(bool enabled);
 
     /// @notice Emitted alongside OrderSubmitted with full PoolKey for Reactive RVM auto-registration.
     event OrderRegisteredReactive(
@@ -238,7 +240,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
 
         // Skip processing if we're in the middle of executing a TWAMM chunk
         // to prevent infinite recursion
-        if (!_isExecutingChunk && twammEnabled[key.toId()]) {
+        if (processOrdersOnAfterSwap && !_isExecutingChunk && twammEnabled[key.toId()]) {
             _processPendingOrders(key);
         }
         return (IHooks.afterSwap.selector, 0);
@@ -429,6 +431,11 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         } else {
             emit Unpaused(msg.sender);
         }
+    }
+
+    function setProcessOrdersOnAfterSwap(bool enabled) external onlyOwner {
+        processOrdersOnAfterSwap = enabled;
+        emit AfterSwapProcessingSet(enabled);
     }
 
     /**

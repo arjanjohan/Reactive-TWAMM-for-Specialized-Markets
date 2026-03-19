@@ -23,7 +23,9 @@ contract SetupDemoEnvironment is Script {
 
     uint24 constant FEE = 3000;
     int24 constant TICK_SPACING = 60;
-    uint160 constant SQRT_PRICE_X96_1_1 = 79228162514264337593543950336;
+    // Default demo price: ~0.02 USDC per REACT in human units.
+    // For REACT(18) / USDC(6), this corresponds to a much smaller raw ratio than 1:1.
+    uint160 constant DEFAULT_DEMO_SQRT_PRICE_X96 = 11204554194957227983746;
 
     function run() external {
         uint256 pk = _loadPrivateKey();
@@ -31,6 +33,7 @@ contract SetupDemoEnvironment is Script {
         address hook = vm.envAddress("TWAMM_HOOK");
         address reactive = vm.envAddress("REACTIVE_TWAMM");
         address poolManager = _envAddressOr("UNICHAIN_POOL_MANAGER", DEFAULT_POOL_MANAGER);
+        uint160 sqrtPriceX96 = uint160(_envUintOr("DEMO_SQRT_PRICE_X96", DEFAULT_DEMO_SQRT_PRICE_X96));
 
         vm.startBroadcast(pk);
 
@@ -40,10 +43,11 @@ contract SetupDemoEnvironment is Script {
         SimpleSwapExecutor swapExecutor = new SimpleSwapExecutor(IPoolManager(poolManager));
         PoolModifyLiquidityTest liquidityRouter = new PoolModifyLiquidityTest(IPoolManager(poolManager));
 
-        // mint demo balances
-        // Large demo balances to support full-range liquidity despite decimal mismatch (USDC 6 vs REACT 18)
+        // Mint demo balances.
+        // At a realistic REACT/USD price with full-range liquidity, the REACT side needs a much larger
+        // nominal balance than the old 1:1 raw-unit setup due to the 18 vs 6 decimal mismatch.
         usdc.mint(deployer, 2_000_000_000_000_000_000 * 10 ** 6);
-        react.mint(deployer, 2_000_000 * 10 ** 18);
+        react.mint(deployer, 2_000_000_000_000 * 10 ** 18);
 
         (address token0, address token1) = address(usdc) < address(react)
             ? (address(usdc), address(react))
@@ -57,7 +61,7 @@ contract SetupDemoEnvironment is Script {
             hooks: IHooks(hook)
         });
 
-        IPoolManager(poolManager).initialize(key, SQRT_PRICE_X96_1_1);
+        IPoolManager(poolManager).initialize(key, sqrtPriceX96);
 
         // approvals for adding liquidity
         usdc.approve(address(liquidityRouter), type(uint256).max);
@@ -85,6 +89,7 @@ contract SetupDemoEnvironment is Script {
         console2.log("SWAP_EXECUTOR:", address(swapExecutor));
         console2.log("POOL_MANAGER:", poolManager);
         console2.log("REACTIVE_TWAMM:", reactive);
+        console2.log("SQRT_PRICE_X96:", sqrtPriceX96);
     }
 
     function _envAddressOr(string memory key, address fallbackAddr) internal view returns (address) {
@@ -92,6 +97,14 @@ contract SetupDemoEnvironment is Script {
             return a;
         } catch {
             return fallbackAddr;
+        }
+    }
+
+    function _envUintOr(string memory key, uint256 fallbackValue) internal view returns (uint256) {
+        try vm.envUint(key) returns (uint256 value) {
+            return value;
+        } catch {
+            return fallbackValue;
         }
     }
 

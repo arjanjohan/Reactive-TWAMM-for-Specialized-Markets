@@ -8,11 +8,11 @@ import TWAMMHookAbi from "~~/contracts/abi/TWAMMHook.json";
 const externalContracts = {
   1301: {
     TWAMMHook: {
-      address: "0x323cDD447000e5F9CCF1E07444898A92548410C0",
+      address: "0x2b57c62cf6030e275b325bbbbea8964c287d50c0",
       abi: TWAMMHookAbi,
     },
     ReactiveTWAMM: {
-      address: "0xA7F2D45929c76A2ea5af3aB29d3CF3Ac09Bd4017",
+      address: "0x1fb5b9658aa39bd26bc9bfbc33970a4a238a6678",
       abi: ReactiveTWAMMAbi,
     },
   },

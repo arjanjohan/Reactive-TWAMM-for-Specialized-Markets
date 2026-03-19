@@ -146,7 +146,7 @@ forge install
 # Build
 forge build
 
-# Test (24 tests across 3 suites)
+# Test (32 tests across 4 suites)
 forge test
 
 # Run with verbosity
@@ -181,6 +181,13 @@ forge script script/DeployTWAMM.s.sol \
   --rpc-url $UNICHAIN_RPC --broadcast -vvv
 ```
 
+Important:
+- The hook is **immutable**. Re-running the deploy script does **not** upgrade code at an existing hook address.
+- Treat the deployment as valid only if you can confirm the new tx on Uniscan and the resulting hook address is the one you intend to use.
+- If the reported hook address is the same as an existing deployment, do **not** assume the live hook was upgraded. Verify the tx and bytecode before proceeding.
+- If you want to force a genuinely new hook address, set `HOOK_ADDRESS_TO_AVOID=<old hook>` before deployment.
+- If you want to resume salt mining from a later point, set `HOOK_SALT_START=<number>`.
+
 Capture the output addresses:
 - `TWAMM_HOOK_ADDRESS` (the CREATE2-mined hook)
 - `REACTIVE_TWAMM_ADDRESS`
@@ -194,11 +201,13 @@ node script/sync_addresses.mjs
 source .env.addresses
 ```
 
-This regenerates `.env.addresses` and `frontend/app/addresses.ts` from the single source of truth.
+This regenerates `.env.addresses`, `frontend/app/addresses.ts`, and `frontend/contracts/externalContracts.ts` from the single source of truth.
 
 ### Step 3: Setup demo environment (tokens + pool + liquidity)
 
 Deploys fresh USDC/REACT demo tokens, creates a Uniswap v4 pool with the hook, and adds full-range liquidity.
+The default pool initialization price is now a realistic REACT/USD starting point instead of the old raw `1:1` setup.
+Override it with `DEMO_SQRT_PRICE_X96` if you want a different starting price.
 
 ```bash
 forge script script/SetupDemoEnvironment.s.sol \
@@ -227,8 +236,10 @@ cast send $TWAMM_HOOK \
 
 ### Step 5: Deploy ReactiveTWAMM to Lasna
 
+Redeploy the Lasna `ReactiveTWAMM` when the target hook changes, or when you explicitly want a fresh Lasna instance for testing. If the Unichain hook address did not actually change, a Lasna redeploy is usually unnecessary.
+
 ```bash
-# Deploy (funds contract with 0.5 REACT for RVM execution fees)
+# Deploy (also seeds the Lasna contract with 0.5 native token)
 TWAMM_HOOK=$TWAMM_HOOK forge script script/DeployReactiveLasna.s.sol \
   --rpc-url $LASNA_RPC --broadcast -vvv
 ```
@@ -288,6 +299,11 @@ cast send 0x0000000000000000000000000000000000fffFfF \
 # Quick smoke test: submit an order + execute a chunk
 forge script script/SmokeTWAMM.s.sol --rpc-url $UNICHAIN_RPC --broadcast -vvv
 ```
+
+`verify_all.sh` verifies:
+- `TWAMMHook` on Unichain Sepolia
+- the Unichain-side `ReactiveTWAMM` companion deployment
+- the Lasna `ReactiveTWAMM`
 
 ### End-to-End Reactive Callback Test
 
@@ -377,8 +393,7 @@ node script/sync_addresses.mjs
 This updates:
 - `.env.addresses` — sourced by Foundry scripts and shell commands
 - `frontend/app/addresses.ts` — imported by the Next.js frontend
-
-The `externalContracts.ts` file in the frontend also references the hook/reactive addresses for the scaffold-eth debug UI — update manually if needed.
+- `frontend/contracts/externalContracts.ts` — scaffold-eth debug UI references
 
 ---
 
