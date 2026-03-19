@@ -6,7 +6,7 @@
 ![logo](/frontend/public/logo.png)
 <h4 align="center">
   <a href="https://reactive-twamm.vercel.app">App</a> |
-  <a href="">Demo video</a>
+  <a href="https://youtu.be/jsnyJjx0XqM">Demo video</a>
 </h4>
 </div>
 
@@ -31,15 +31,13 @@ Large trades in illiquid markets cause massive slippage. Traditional AMMs execut
 ## 🚀 Testnet Deployment (Unichain Sepolia + Reactive Lasna)
 
 ### Unichain Sepolia (destination)
+
 - **TWAMM Hook:** [`0x2b57c62cf6030e275b325bbbbea8964c287d50c0`](https://unichain-sepolia.blockscout.com/address/0x2b57c62cf6030e275b325bbbbea8964c287d50c0?tab=contract)
 - **Reactive callback proxy:** [`0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4`](https://sepolia.uniscan.xyz/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4)
-- **Demo USDC:** `0x4148e16C6C02dD56b42c638989cF419733468f61`
-- **Demo REACT:** `0x3fdC17469956C6111a6ddf88205D5a1c16E0433e`
-- **Swap executor:** `0xBFA42771C34B2f60a9f1f9b1Ca507C8e18Cb5F59`
 
 ### Reactive Lasna (automation layer)
+
 - **ReactiveTWAMM:** [`0x13dD8AC2311125a0f84Ae8095060770F1f9c07b5`](https://lasna.reactscan.net/address/0x13dD8AC2311125a0f84Ae8095060770F1f9c07b5)
-- **System contract:** `0x0000000000000000000000000000000000fffFfF`
 
 ### Architecture: Event-Driven RVM Auto-Registration
 
@@ -57,9 +55,6 @@ The ReactiveTWAMM contract uses a fully event-driven architecture:
 **Dual funding requirement:**
 - **Lasna**: The ReactiveTWAMM contract needs REACT (native token) for RVM execution fees via `depositTo(contractAddr)` on system contract
 - **Unichain**: The callback proxy needs ETH deposited via `depositTo(hookAddr)` for cross-chain delivery fees. Reactive infra charges the **target contract** (hook), not the sender
-
----
-
 
 ---
 
@@ -340,19 +335,21 @@ This bot:
 
 ### Configuration (env vars)
 
-| Variable | Default | Description |
-|---|---|---|
-| `BOT_PK` / `PRIVATE_KEY` | — | Bot wallet private key (required) |
-| `UNICHAIN_RPC` | `https://sepolia.unichain.org` | Unichain RPC URL |
-| `UNICHAIN_RPC_2` | — | Optional second Unichain RPC for fallback |
-| `ARB_ALWAYS_POLL_SECONDS` | `20` | Seconds between price checks |
-| `ARB_ALWAYS_MAX_DEV_PCT` | `0.50` | Min price deviation % before trading |
-| `ARB_ALWAYS_CLOSE_GAP_PCT` | `20` | Fraction of the market gap to close per cycle |
-| `ARB_ALWAYS_MAX_SWAP_USDC` | `1000` | Max USDC spent in one corrective buy |
-| `ARB_ALWAYS_MAX_SWAP_REACT` | `50000` | Max REACT sold in one corrective sell |
-| `ARB_ALWAYS_MICRO_SWAPS` | `2` | Backward-compatible split count |
-| `ARB_ALWAYS_CYCLE_SECONDS` | `20` | Cycle pacing control |
-| `ARB_ALWAYS_DRY_RUN` | `false` | Log intended trades without sending txs |
+
+| Variable                    | Default                        | Description                                   |
+| --------------------------- | ------------------------------ | --------------------------------------------- |
+| `BOT_PK` / `PRIVATE_KEY`    | —                              | Bot wallet private key (required)             |
+| `UNICHAIN_RPC`              | `https://sepolia.unichain.org` | Unichain RPC URL                              |
+| `UNICHAIN_RPC_2`            | —                              | Optional second Unichain RPC for fallback     |
+| `ARB_ALWAYS_POLL_SECONDS`   | `20`                           | Seconds between price checks                  |
+| `ARB_ALWAYS_MAX_DEV_PCT`    | `0.50`                         | Min price deviation % before trading          |
+| `ARB_ALWAYS_CLOSE_GAP_PCT`  | `20`                           | Fraction of the market gap to close per cycle |
+| `ARB_ALWAYS_MAX_SWAP_USDC`  | `1000`                         | Max USDC spent in one corrective buy          |
+| `ARB_ALWAYS_MAX_SWAP_REACT` | `50000`                        | Max REACT sold in one corrective sell         |
+| `ARB_ALWAYS_MICRO_SWAPS`    | `2`                            | Backward-compatible split count               |
+| `ARB_ALWAYS_CYCLE_SECONDS`  | `20`                           | Cycle pacing control                          |
+| `ARB_ALWAYS_DRY_RUN`        | `false`                        | Log intended trades without sending txs       |
+
 
 The bot uses demo `MockERC20` tokens that have a public `mint()` function — it auto-mints tokens when its balance is insufficient.
 
@@ -432,8 +429,10 @@ Current: **34/34 tests passing**
 ## 🔗 Links
 
 - [Frontend](https://reactive-twamm.vercel.app)
+- [Demo video](https://youtu.be/jsnyJjx0XqM)
 - [ReactiveTWAMM.sol on Reactive Lasna](https://lasna.reactscan.net/address/0x13dD8AC2311125a0f84Ae8095060770F1f9c07b5)
 - [TWAMMHook.sol on Unichain Sepolia](https://unichain-sepolia.blockscout.com/address/0x2b57c62cf6030e275b325bbbbea8964c287d50c0?tab=contract)
+
 ---
 
 ## 🔗 Resources
@@ -445,4 +444,4 @@ Current: **34/34 tests passing**
 
 ---
 
-**Built for the UHI Hookathon 2026** 🦄
+**Built for the UHI Hookathon 2026 by [arjanjohan](https://x.com/arjanjohan)** 🦄
