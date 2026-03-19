@@ -1422,7 +1422,15 @@ const Home: NextPage = () => {
                 <polyline fill="none" stroke="#02bbf0" strokeWidth="3" points={svgChart.exec} />
                 <polyline fill="none" stroke="#ff8f2e" strokeWidth="2" strokeDasharray="6 6" points={svgChart.trend} />
                 {svgChart.chunkDots.map(dot => (
-                  <circle key={dot.key} cx={dot.cx} cy={dot.cy} r="4.5" fill="#e11d48" stroke="#ffffff" strokeWidth="1.5" />
+                  <circle
+                    key={dot.key}
+                    cx={dot.cx}
+                    cy={dot.cy}
+                    r="4.5"
+                    fill="#e11d48"
+                    stroke="#ffffff"
+                    strokeWidth="1.5"
+                  />
                 ))}
 
                 <text x="6" y="24" fontSize="10" fill="currentColor" opacity="0.7">

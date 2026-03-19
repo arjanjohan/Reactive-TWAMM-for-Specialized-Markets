@@ -5,36 +5,40 @@
 
 ![logo](/frontend/public/logo.png)
 <h4 align="center">
-  <a href="https://reactive-twamm-for-specialized-mark.vercel.app">App</a> |
-  <a href="https://scaffold-move-chi.vercel.app/">Demo video</a>
+  <a href="https://reactive-twamm.vercel.app">App</a> |
+  <a href="">Demo video</a>
 </h4>
 </div>
 
-**Hookathon:** UHI (Uniswap Hook Incubator) - Specialized Markets Track
-**Sponsors:** Reactive Network + Unichain
-**Timeline:** March 2-19, 2026
+Time-weighted automated market maker (TWAMM) hook for Uniswap v4 that uses Reactive Network to automate large trades in illiquid specialized markets (RWA, prediction markets, exotic derivatives) on Unichain.
+
+## 🔧 What This Hook Does
+
+Large trades in illiquid markets cause massive slippage. Traditional AMMs execute immediately, hurting the trader. This TWAMM hook solves this by breaking large orders into chunks executed over time, using Reactive to trigger each chunk.
+
+### How It Works
+
+1. **User submits** a large trade into the TWAMM hook on Unichain
+2. **Hook stores** order parameters and emits `OrderRegisteredReactive`
+3. **ReactVM auto-registers** the order by listening to the event via `react()`
+4. **CRON fires** every ~10 blocks on Lasna, triggering `react()` which emits `Callback` events
+5. **Reactive infra delivers** callbacks to Unichain, executing `executeTWAMMChunkReactive()`
+6. **Hook executes** each chunk as a swap via Uniswap v4
+7. **Repeat** until all chunks complete, then user claims output
 
 ---
-
-## 🎯 Elevator Pitch
-
-Time-weighted automated market maker (TWAMM) hook for Uniswap v4 that uses Reactive Network to automate large trades in illiquid specialized markets (RWA, prediction markets, exotic derivatives) on Unichain's low-latency chain.
-
----
-
-## 📝 Project Status
-
-## TODO
-- [ ] Make TWAMM chunk cadence configurable (pool-level or bounded per-order parameter) instead of fully hardcoded `MIN_CHUNK_DURATION`, while preserving safe limits (`MAX_CHUNKS`, minimum duration guards).
 
 ## 🚀 Testnet Deployment (Unichain Sepolia + Reactive Lasna)
 
 ### Unichain Sepolia (destination)
-- **TWAMM Hook:** [`0x323cDD447000e5F9CCF1E07444898A92548410C0`](https://sepolia.uniscan.xyz/address/0x323cDD447000e5F9CCF1E07444898A92548410C0)
+- **TWAMM Hook:** [`0x2b57c62cf6030e275b325bbbbea8964c287d50c0`](https://unichain-sepolia.blockscout.com/address/0x2b57c62cf6030e275b325bbbbea8964c287d50c0?tab=contract)
 - **Reactive callback proxy:** [`0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4`](https://sepolia.uniscan.xyz/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4)
+- **Demo USDC:** `0x4148e16C6C02dD56b42c638989cF419733468f61`
+- **Demo REACT:** `0x3fdC17469956C6111a6ddf88205D5a1c16E0433e`
+- **Swap executor:** `0xBFA42771C34B2f60a9f1f9b1Ca507C8e18Cb5F59`
 
 ### Reactive Lasna (automation layer)
-- **ReactiveTWAMM:** [`0xeAD58F77d28d30C3144e7D8CA56F3b54459cEC76`](https://lasna.reactscan.net/address/0xeAD58F77d28d30C3144e7D8CA56F3b54459cEC76)
+- **ReactiveTWAMM:** [`0x13dD8AC2311125a0f84Ae8095060770F1f9c07b5`](https://lasna.reactscan.net/address/0x13dD8AC2311125a0f84Ae8095060770F1f9c07b5)
 - **System contract:** `0x0000000000000000000000000000000000fffFfF`
 
 ### Architecture: Event-Driven RVM Auto-Registration
@@ -54,39 +58,18 @@ The ReactiveTWAMM contract uses a fully event-driven architecture:
 - **Lasna**: The ReactiveTWAMM contract needs REACT (native token) for RVM execution fees via `depositTo(contractAddr)` on system contract
 - **Unichain**: The callback proxy needs ETH deposited via `depositTo(hookAddr)` for cross-chain delivery fees. Reactive infra charges the **target contract** (hook), not the sender
 
-| Milestone | Status | Date |
-|-----------|--------|------|
-| ✅ Foundry Setup | Complete | Feb 27 |
-| ✅ Core TWAMM Hook | Complete | Feb 27 |
-| ✅ Test Coverage | Complete (32/32) | Mar 9 |
-| ✅ Reactive Integration | Complete | Mar 18 |
-| ✅ Frontend | Complete | Mar 18 |
-
 ---
 
-## 🔧 What This Hook Does
-
-Large trades in illiquid markets cause massive slippage. Traditional AMMs execute immediately, hurting the trader. TWAMM solves this by breaking large orders into chunks executed over time—but it requires someone to trigger each chunk.
-
-### How It Works
-
-1. **User submits** a large trade into the TWAMM hook on Unichain
-2. **Hook stores** order parameters and emits `OrderRegisteredReactive`
-3. **ReactVM auto-registers** the order by listening to the event via `react()`
-4. **CRON fires** every ~10 blocks on Lasna, triggering `react()` which emits `Callback` events
-5. **Reactive infra delivers** callbacks to Unichain, executing `executeTWAMMChunkReactive()`
-6. **Hook executes** each chunk as a swap via Uniswap v4
-7. **Repeat** until all chunks complete, then user claims output
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐    ┌──────────────────────┐    ┌──────────────────────┐
-│  User Frontend  │───▶│   Unichain Sepolia    │    │   Reactive Lasna     │
+┌─────────────────┐    ┌────────────────────────┐    ┌──────────────────────┐
+│  User Frontend  │──▶│   Unichain Sepolia     │    │   Reactive Lasna     │
 │  (Next.js App)  │    │                        │    │                      │
-│                 │    │  TWAMMHook             │◀───│  ReactiveTWAMM       │
+│                 │    │  TWAMMHook             │◀──│  ReactiveTWAMM       │
 │  - Submit order │    │  - submitTWAMMOrder()  │    │  - react() (RVM)     │
 │  - Fund both    │    │  - executeTWAMMChunk() │    │  - CRON10 trigger    │
 │    chains       │    │                        │    │  - Auto-register     │
@@ -94,46 +77,13 @@ Large trades in illiquid markets cause massive slippage. Traditional AMMs execut
 │                 │    │  - depositTo() (fund)  │    │                      │
 │                 │    │  - delivers callbacks  │    │  System Contract     │
 │                 │    │                        │    │  - depositTo() (fund)│
-└─────────────────┘    └──────────────────────┘    └──────────────────────┘
-                              │
-                              ▼
-                      ┌──────────────────┐
-                      │  Uniswap v4 Pool │
-                      └──────────────────┘
+└─────────────────┘    └────────────────────────┘    └──────────────────────┘
+                                   │
+                                   ▼
+                           ┌──────────────────┐
+                           │  Uniswap v4 Pool │
+                           └──────────────────┘
 ```
-
----
-
-## 💡 Why This Project Wins
-
-### Perfect Sponsor Alignment
-
-| Sponsor | What They Want | How We Deliver |
-|---------|---------------|----------------|
-| **Reactive** | Cross-chain automation, TWAMM showcase | Exact use case from their blog post |
-| **Unichain** | Low-latency execution, v4 hooks | 200ms execution, native v4 integration |
-
-### Theme Fit: "Specialized Markets"
-- Designed for **illiquid assets** where TWAMM matters most
-- **RWA**: Real estate tokens, private equity
-- **Prediction markets**: Event outcomes with volatile liquidity
-- **Exotic derivatives**: Custom curves, low volume
-
-### Technical Feasibility
-- TWAMM math is documented (Paradigm paper)
-- Reactive SDK is straightforward
-- Unichain v4 is live and ready
-- Can build on existing hook templates
-
----
-
-## 🛠️ Tech Stack
-
-- **Solidity ^0.8.26** - Hook implementation
-- **Foundry** - Testing & deployment
-- **Uniswap v4** - Core AMM integration
-- **Reactive SDK** - Cross-chain automation (Week 2)
-- **Unichain** - Execution layer
 
 ---
 
@@ -146,7 +96,7 @@ forge install
 # Build
 forge build
 
-# Test (32 tests across 4 suites)
+# Test (34 tests across 4 suites)
 forge test
 
 # Run with verbosity
@@ -156,6 +106,12 @@ forge test -vv
 ---
 
 ## 🚢 Full Deployment Flow
+
+Instructions on how to deploy and configure the smart contracts and the frontend.
+
+<details>
+
+  <summary>Click to expand</summary>
 
 ### Prerequisites
 
@@ -301,10 +257,10 @@ cast send 0x0000000000000000000000000000000000fffFfF \
 forge script script/SmokeTWAMM.s.sol --rpc-url $UNICHAIN_RPC --broadcast -vvv
 ```
 
-`verify_all.sh` verifies:
-- `TWAMMHook` on Unichain Sepolia
-- the Unichain-side `ReactiveTWAMM` companion deployment
-- the Lasna `ReactiveTWAMM`
+`verify_all.sh` submits verification to:
+- Unichain Sepolia Blockscout for `TWAMMHook`
+- Unichain Sepolia Blockscout for the Unichain-side `ReactiveTWAMM`
+- Reactive Sourcify for the Lasna `ReactiveTWAMM` (which should surface on Reactscan)
 
 ### End-to-End Reactive Callback Test
 
@@ -341,26 +297,46 @@ Reports `SUCCESS` if chunks executed, or a diagnostic checklist if the callback 
 
 ---
 
-## 🤖 Arbitrage Bot
+</details>
 
-The project includes a demo arbitrage bot (`script/arb_bot.mjs`) that watches for TWAMM chunk executions and nudges the pool price back toward the market rate.
+## 🤖 Arbitrage Bot Script
+
+The project includes an arbitrage bot that is used during the demo to nudge the pool price back toward the market rate.
+- `script/arb_always_bot.mjs` — continuously compares pool price vs CoinGecko and trades toward market
+
+<details>
+
+  <summary>Click to expand</summary>
 
 ### What it does
 
-1. **Watches `ChunkExecuted` events** on the TWAMMHook contract
+1. **Polls the live pool price** directly from Unichain `slot0`
 2. **Fetches REACT market price** from CoinGecko
-3. **Compares pool execution price** vs market price
-4. **Runs micro-swap cycles** (multiple small swaps over ~1 minute) to correct deviations above threshold
-5. **Optional noise swaps** — periodic small swaps to generate price observations for the chart
+3. **Measures deviation** between pool price and external market price
+4. **Sizes one corrective swap** to close a configurable fraction of the gap
+5. **Caps trade size** with max USDC / REACT limits and repeats on a timer
 
-### Running the bot
+### Running the arb bot
 
 ```bash
-# Required: a funded Unichain Sepolia wallet
-BOT_PK=0x<your-private-key> node script/arb_bot.mjs
+ARB_ALWAYS_DRY_RUN=true node script/arb_always_bot.mjs
 ```
 
-The bot reads addresses from environment variables (auto-synced from `addresses.json` via `.env`). No hardcoded addresses needed.
+Live trading example:
+
+```bash
+ARB_ALWAYS_CLOSE_GAP_PCT=20 \
+ARB_ALWAYS_MAX_SWAP_USDC=1000 \
+ARB_ALWAYS_MAX_SWAP_REACT=50000 \
+node script/arb_always_bot.mjs
+```
+
+This bot:
+1. Reads live pool price from Unichain `slot0`
+2. Fetches REACT/USD from CoinGecko
+3. Sizes one swap to close a fraction of the gap to market
+4. Caps trade size with env-configurable limits
+
 
 ### Configuration (env vars)
 
@@ -368,18 +344,22 @@ The bot reads addresses from environment variables (auto-synced from `addresses.
 |---|---|---|
 | `BOT_PK` / `PRIVATE_KEY` | — | Bot wallet private key (required) |
 | `UNICHAIN_RPC` | `https://sepolia.unichain.org` | Unichain RPC URL |
-| `ARB_MAX_DEV_PCT` | `0.75` | Min price deviation % to trigger arb |
-| `ARB_MICRO_SWAPS` | `4` | Number of micro-swaps per correction cycle |
-| `ARB_CYCLE_SECONDS` | `60` | Duration of one arb cycle |
-| `ARB_SWAP_USDC` | `50` | USDC amount per arb cycle (when buying REACT) |
-| `ARB_SWAP_REACT` | `50` | REACT amount per arb cycle (when selling REACT) |
-| `ARB_NOISE_ENABLED` | `false` | Enable periodic noise swaps |
-| `ARB_NOISE_MINUTES` | `3` | Interval between noise swaps |
-| `ARB_NOISE_USDC` | `5` | USDC amount per noise swap |
+| `UNICHAIN_RPC_2` | — | Optional second Unichain RPC for fallback |
+| `ARB_ALWAYS_POLL_SECONDS` | `20` | Seconds between price checks |
+| `ARB_ALWAYS_MAX_DEV_PCT` | `0.50` | Min price deviation % before trading |
+| `ARB_ALWAYS_CLOSE_GAP_PCT` | `20` | Fraction of the market gap to close per cycle |
+| `ARB_ALWAYS_MAX_SWAP_USDC` | `1000` | Max USDC spent in one corrective buy |
+| `ARB_ALWAYS_MAX_SWAP_REACT` | `50000` | Max REACT sold in one corrective sell |
+| `ARB_ALWAYS_MICRO_SWAPS` | `2` | Backward-compatible split count |
+| `ARB_ALWAYS_CYCLE_SECONDS` | `20` | Cycle pacing control |
+| `ARB_ALWAYS_DRY_RUN` | `false` | Log intended trades without sending txs |
 
 The bot uses demo `MockERC20` tokens that have a public `mint()` function — it auto-mints tokens when its balance is insufficient.
 
 ---
+
+</details>
+
 
 ## 📍 Address Management
 
@@ -410,7 +390,7 @@ This updates:
 │   ├── MockERC20.sol          # Test token
 │   └── TestToken.sol          # Test token
 ├── test/
-│   ├── TWAMMHook.t.sol              # Unit tests (16 passing)
+│   ├── TWAMMHook.t.sol              # Unit tests (18 passing)
 │   ├── TWAMMHook.integration.t.sol  # Integration tests (4 passing)
 │   ├── ReactiveTWAMM.t.sol          # Reactive tests (4 passing)
 │   └── ReactiveCallback.t.sol      # Cross-chain callback tests (8 passing)
@@ -424,7 +404,7 @@ This updates:
 │   ├── E2EReactiveTest.s.sol        # 3-step cross-chain E2E test
 │   ├── VerifyReactiveFlow.s.sol     # Diagnostic scripts (Lasna + Unichain)
 │   ├── sync_addresses.mjs           # Address sync utility
-│   └── arb_bot.mjs                  # Arbitrage bot
+│   ├── arb_always_bot.mjs           # Continuous market-reverting arb bot
 ├── frontend/                   # Next.js React dApp
 ├── deployments/
 │   └── addresses.json          # Single source of truth
@@ -440,9 +420,9 @@ This updates:
 
 ## 📊 Test Coverage
 
-Current: **32/32 tests passing**
+Current: **34/34 tests passing**
 
-- `TWAMMHook.t.sol`: 16/16 passing
+- `TWAMMHook.t.sol`: 18/18 passing
 - `TWAMMHook.integration.t.sol`: 4/4 passing
 - `ReactiveTWAMM.t.sol`: 4/4 passing
 - `ReactiveCallback.t.sol`: 8/8 passing (simulated cross-chain callback flow)
@@ -451,7 +431,9 @@ Current: **32/32 tests passing**
 
 ## 🔗 Links
 
-- [Frontend](https://reactive-twamm-for-specialized-mark.vercel.app)
+- [Frontend](https://reactive-twamm.vercel.app)
+- [ReactiveTWAMM.sol on Reactive Lasna](https://lasna.reactscan.net/address/0x13dD8AC2311125a0f84Ae8095060770F1f9c07b5)
+- [TWAMMHook.sol on Unichain Sepolia](https://unichain-sepolia.blockscout.com/address/0x2b57c62cf6030e275b325bbbbea8964c287d50c0?tab=contract)
 ---
 
 ## 🔗 Resources
@@ -460,12 +442,6 @@ Current: **32/32 tests passing**
 - [Uniswap v4 Hooks Docs](https://docs.uniswap.org/contracts/v4/concepts/hooks)
 - [Reactive Network Blog - Unichain Integration](https://blog.reactive.network/reactive-network-integrates-with-unichain/)
 - [Unichain Docs](https://docs.unichain.org/)
-
----
-
-## 📄 License
-
-MIT
 
 ---
 
