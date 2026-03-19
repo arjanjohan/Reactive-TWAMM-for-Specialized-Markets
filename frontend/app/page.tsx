@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { ADDRS, CHAIN_ID, LASNA, POOL_MANAGER } from "./addresses";
+import { Address } from "@scaffold-ui/components";
 import type { NextPage } from "next";
 import {
   concatHex,
@@ -36,10 +38,8 @@ import {
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import reactiveTwammAbi from "~~/contracts/abi/ReactiveTWAMM.json";
-import { Address } from "@scaffold-ui/components";
 import twammHookAbi from "~~/contracts/abi/TWAMMHook.json";
 import { useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
-import { ADDRS, CHAIN_ID, LASNA, POOL_MANAGER } from "./addresses";
 
 type DurationUnit = "minutes" | "hours" | "days";
 
@@ -55,7 +55,6 @@ const SLIPPAGE_OPTIONS = ["0.5", "1", "2", "5", "10"] as const;
 const POOLS_SLOT = 6n;
 const Q96 = 2 ** 96;
 const MASK_160 = (1n << 160n) - 1n;
-const MASK_24 = (1n << 24n) - 1n;
 const swapEvent = parseAbiItem(
   "event Swap(bytes32 indexed id, address indexed sender, int128 amount0, int128 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick, uint24 fee)",
 );
@@ -117,7 +116,7 @@ const Home: NextPage = () => {
   const [slippagePct, setSlippagePct] = useState<(typeof SLIPPAGE_OPTIONS)[number]>("5");
   const [lastOrderId, setLastOrderId] = useState<`0x${string}` | null>(null);
   const [flowStatus, setFlowStatus] = useState<string>("Idle");
-  const [windowSeconds, setWindowSeconds] = useState<number>(3600); // default 1h
+  const [windowSeconds, setWindowSeconds] = useState<number>(300); // default 5m
   const [lasnaReactiveBalance, setLasnaReactiveBalance] = useState<string>("-");
   const [lasnaActiveOrderCount, setLasnaActiveOrderCount] = useState<number>(0);
   const [lasnaDebt, setLasnaDebt] = useState<string>("0");
@@ -205,7 +204,7 @@ const Home: NextPage = () => {
 
   const hasEnoughAllowance = useMemo(() => {
     if (!address || amountInBase <= 0n) return false;
-    return (tokenInAllowanceRaw as bigint | undefined ?? 0n) >= amountInBase;
+    return ((tokenInAllowanceRaw as bigint | undefined) ?? 0n) >= amountInBase;
   }, [address, amountInBase, tokenInAllowanceRaw]);
 
   const poolKey = useMemo(() => {
@@ -404,15 +403,16 @@ const Home: NextPage = () => {
         );
 
         // Process chunk logs
-        const orderTokenIn = new Map<string, string>();
+        const orderMeta = new Map<string, { tokenIn: string; tokenOut: string }>();
         for (const log of chunkLogs) {
           const args = (log as any).args || {};
           const orderId = args.orderId as string;
           const amountInRaw = args.amountIn as bigint;
           const amountOutRaw = args.amountOut as bigint;
           if (!amountInRaw || !amountOutRaw || amountInRaw === 0n || amountOutRaw === 0n) continue;
+          if (lastOrderId && orderId.toLowerCase() !== lastOrderId.toLowerCase()) continue;
 
-          if (!orderTokenIn.has(orderId)) {
+          if (!orderMeta.has(orderId)) {
             try {
               const order = await publicClient.readContract({
                 address: ADDRS.hook,
@@ -420,14 +420,26 @@ const Home: NextPage = () => {
                 functionName: "getOrder",
                 args: [orderId],
               });
-              orderTokenIn.set(orderId, ((order as any).tokenIn as string).toLowerCase());
+              orderMeta.set(orderId, {
+                tokenIn: ((order as any).tokenIn as string).toLowerCase(),
+                tokenOut: ((order as any).tokenOut as string).toLowerCase(),
+              });
             } catch {
               continue;
             }
           }
 
-          const tIn = orderTokenIn.get(orderId)!;
-          const inIsUsdc = tIn === ADDRS.usdc.toLowerCase();
+          const meta = orderMeta.get(orderId);
+          if (!meta) continue;
+
+          const currentUsdc = ADDRS.usdc.toLowerCase();
+          const currentReact = ADDRS.react.toLowerCase();
+          const isCurrentPair =
+            (meta.tokenIn === currentUsdc && meta.tokenOut === currentReact) ||
+            (meta.tokenIn === currentReact && meta.tokenOut === currentUsdc);
+          if (!isCurrentPair) continue;
+
+          const inIsUsdc = meta.tokenIn === currentUsdc;
           const inDec = inIsUsdc ? 6 : 18;
           const outDec = inIsUsdc ? 18 : 6;
           const amtIn = Number(formatUnits(amountInRaw, inDec));
@@ -741,6 +753,7 @@ const Home: NextPage = () => {
       return {
         exec: "",
         trend: "",
+        chunkDots: [] as { cx: number; cy: number; key: string }[],
         yMin: 0,
         yMax: 0,
         xStart: "",
@@ -772,6 +785,12 @@ const Home: NextPage = () => {
 
     const exec = filteredChartPoints.map(p => toXY(p.ts, p.execPrice)).join(" ");
     const trend = filteredChartPoints.map(p => toXY(p.ts, p.trendPrice)).join(" ");
+    const chunkDots = filteredChartPoints
+      .filter(p => p.source === "chunk")
+      .map((p, idx) => {
+        const [cx, cy] = toXY(p.ts, p.execPrice).split(",").map(Number);
+        return { cx, cy, key: `${p.blockNumber}-${p.ts}-${idx}` };
+      });
 
     const xStart = new Date(minTs * 1000).toLocaleTimeString([], {
       hour: "2-digit",
@@ -784,7 +803,7 @@ const Home: NextPage = () => {
       second: "2-digit",
     });
 
-    return { exec, trend, yMin, yMax, xStart, xEnd };
+    return { exec, trend, chunkDots, yMin, yMax, xStart, xEnd };
   }, [filteredChartPoints]);
 
   const approveForHook = async () => {
@@ -812,7 +831,14 @@ const Home: NextPage = () => {
       const minOutBase = 0n;
       const submitHash = await writeTwamm({
         functionName: "submitTWAMMOrder",
-        args: [poolKey, amountInBase, BigInt(durationSeconds), tokenIn.address as `0x${string}`, tokenOut.address as `0x${string}`, minOutBase],
+        args: [
+          poolKey,
+          amountInBase,
+          BigInt(durationSeconds),
+          tokenIn.address as `0x${string}`,
+          tokenOut.address as `0x${string}`,
+          minOutBase,
+        ],
       });
 
       setFlowStatus("Waiting for tx receipt...");
@@ -1228,7 +1254,7 @@ const Home: NextPage = () => {
               <p className="font-semibold">~{estimatedPerChunkOut}</p>
             </div>
           </div>
-{/*
+          {/*
           <div className="rounded-lg bg-base-200 p-2 border border-base-300 text-xs">
             <p className="text-base-content/70">Latest pool price</p>
             <p className="font-semibold">
@@ -1249,7 +1275,11 @@ const Home: NextPage = () => {
             <button className="btn btn-outline w-full" onClick={approveForHook}>
               {hasEnoughAllowance ? `1. ${tokenIn.symbol} Approved` : `1. Approve ${tokenIn.symbol}`}
             </button>
-            <button className="btn btn-primary w-full" disabled={!canSubmitOrder || !hasEnoughAllowance || isTwammMining || lasnaSubscribing} onClick={submitOrder}>
+            <button
+              className="btn btn-primary w-full"
+              disabled={!canSubmitOrder || !hasEnoughAllowance || isTwammMining || lasnaSubscribing}
+              onClick={submitOrder}
+            >
               <BoltIcon className="h-4 w-4" /> 2. Submit Order
             </button>
             <button
@@ -1391,6 +1421,9 @@ const Home: NextPage = () => {
 
                 <polyline fill="none" stroke="#02bbf0" strokeWidth="3" points={svgChart.exec} />
                 <polyline fill="none" stroke="#ff8f2e" strokeWidth="2" strokeDasharray="6 6" points={svgChart.trend} />
+                {svgChart.chunkDots.map(dot => (
+                  <circle key={dot.key} cx={dot.cx} cy={dot.cy} r="4.5" fill="#e11d48" stroke="#ffffff" strokeWidth="1.5" />
+                ))}
 
                 <text x="6" y="24" fontSize="10" fill="currentColor" opacity="0.7">
                   {svgChart.yMax.toFixed(6)}
@@ -1414,7 +1447,10 @@ const Home: NextPage = () => {
                   <span className="h-2 w-2 rounded-full bg-[#ff8f2e]" />
                   Trend (EMA)
                 </span>
-                <span className="badge badge-xs badge-primary">chunk</span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#e11d48]" />
+                  Chunk
+                </span>
                 <span className="badge badge-xs badge-outline">swap</span>
                 <span className="badge badge-xs">live</span>
               </div>
@@ -1454,7 +1490,13 @@ const Home: NextPage = () => {
                       <td className="text-xs">{point.chunkOut}</td>
                       <td>
                         <span
-                          className={`badge badge-xs ${point.source === "chunk" ? "badge-primary" : point.source === "swap" ? "badge-outline" : ""}`}
+                          className={`badge badge-xs ${
+                            point.source === "chunk"
+                              ? "border-rose-600 bg-rose-600 text-white"
+                              : point.source === "swap"
+                                ? "badge-outline"
+                                : ""
+                          }`}
                         >
                           {point.source}
                         </span>
