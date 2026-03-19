@@ -133,8 +133,7 @@ contract E2E_Step1_SubmitOrder is Script {
     function _envOr(string memory key, address fb) internal view returns (address) {
         try vm.envAddress(key) returns (address a) {
             return a;
-        }
-            catch {
+        } catch {
             return fb;
         }
     }
@@ -245,8 +244,7 @@ contract E2E_Step3_VerifyDelivery is Script {
             address deployer;
             try vm.envAddress("DEPLOYER_ADDRESS") returns (address a) {
                 deployer = a;
-            }
-                catch {}
+            } catch {}
             if (deployer != address(0)) {
                 if (rvmId != deployer) {
                     console2.log("  >>> MISMATCH! authorizedReactiveRvmId != DEPLOYER_ADDRESS");
