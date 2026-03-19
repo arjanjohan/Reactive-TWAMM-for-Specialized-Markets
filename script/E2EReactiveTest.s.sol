@@ -63,9 +63,8 @@ contract E2E_Step1_SubmitOrder is Script {
         TestToken tokenA = new TestToken{salt: saltA}("E2E Token A", "E2EA");
         TestToken tokenB = new TestToken{salt: saltB}("E2E Token B", "E2EB");
 
-        (address token0, address token1) = address(tokenA) < address(tokenB)
-            ? (address(tokenA), address(tokenB))
-            : (address(tokenB), address(tokenA));
+        (address token0, address token1) =
+            address(tokenA) < address(tokenB) ? (address(tokenA), address(tokenB)) : (address(tokenB), address(tokenA));
 
         PoolKey memory key = PoolKey({
             currency0: Currency.wrap(token0),
@@ -87,12 +86,13 @@ contract E2E_Step1_SubmitOrder is Script {
         PoolModifyLiquidityTest liqRouter = new PoolModifyLiquidityTest(IPoolManager(poolManager));
         IERC20(token0).approve(address(liqRouter), type(uint256).max);
         IERC20(token1).approve(address(liqRouter), type(uint256).max);
-        liqRouter.modifyLiquidity(key, IPoolManager.ModifyLiquidityParams({
-            tickLower: -887220,
-            tickUpper: 887220,
-            liquidityDelta: int256(uint256(5_000e18)),
-            salt: bytes32(0)
-        }), "");
+        liqRouter.modifyLiquidity(
+            key,
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: -887220, tickUpper: 887220, liquidityDelta: int256(uint256(5_000e18)), salt: bytes32(0)
+            }),
+            ""
+        );
         console2.log("Liquidity added");
 
         // Submit TWAMM order: 10 tokens over 5 minutes = 5 chunks
@@ -101,9 +101,7 @@ contract E2E_Step1_SubmitOrder is Script {
         Currency tokenOut = Currency.wrap(token0 == address(tokenA) ? address(tokenB) : address(tokenA));
 
         inToken.approve(hookAddr, 10 ether);
-        bytes32 orderId = TWAMMHook(hookAddr).submitTWAMMOrder(
-            key, 10 ether, 5 minutes, tokenIn, tokenOut, 0
-        );
+        bytes32 orderId = TWAMMHook(hookAddr).submitTWAMMOrder(key, 10 ether, 5 minutes, tokenIn, tokenOut, 0);
 
         vm.stopBroadcast();
 
@@ -120,7 +118,9 @@ contract E2E_Step1_SubmitOrder is Script {
         console2.log("WARNING: The ORDER_ID from simulation != on-chain ORDER_ID");
         console2.log("Extract the real ORDER_ID from the broadcast receipt:");
         console2.log("");
-        console2.log("  ORDER_ID=$(cast receipt <SUBMIT_TX_HASH> --rpc-url $UNICHAIN_RPC --json | jq -r '.logs[] | select(.topics[0]==\"0xd62d1062fda743ecb668340496b32002059e7be8e51ee5b543eaf7b01e626d22\") | .topics[1]')");
+        console2.log(
+            "  ORDER_ID=$(cast receipt <SUBMIT_TX_HASH> --rpc-url $UNICHAIN_RPC --json | jq -r '.logs[] | select(.topics[0]==\"0xd62d1062fda743ecb668340496b32002059e7be8e51ee5b543eaf7b01e626d22\") | .topics[1]')"
+        );
         console2.log("");
         console2.log("The submit tx is the LAST transaction in the broadcast output above.");
         console2.log("");
@@ -131,7 +131,12 @@ contract E2E_Step1_SubmitOrder is Script {
     }
 
     function _envOr(string memory key, address fb) internal view returns (address) {
-        try vm.envAddress(key) returns (address a) { return a; } catch { return fb; }
+        try vm.envAddress(key) returns (address a) {
+            return a;
+        }
+            catch {
+            return fb;
+        }
     }
 
     function _loadPk() internal view returns (uint256) {
@@ -233,10 +238,15 @@ contract E2E_Step3_VerifyDelivery is Script {
             console2.log("  Checklist:");
             console2.log("  1. Did Step 2 batchExecute emit a Callback event? (check -vvv trace)");
             console2.log("  2. Does authorizedReactiveRvmId match the DEPLOYER EOA?");
-            console2.log("     (Reactive infra overwrites the first payload arg with deployer EOA, not the contract address)");
+            console2.log(
+                "     (Reactive infra overwrites the first payload arg with deployer EOA, not the contract address)"
+            );
             address rvmId = hook.authorizedReactiveRvmId();
             address deployer;
-            try vm.envAddress("DEPLOYER_ADDRESS") returns (address a) { deployer = a; } catch {}
+            try vm.envAddress("DEPLOYER_ADDRESS") returns (address a) {
+                deployer = a;
+            }
+                catch {}
             if (deployer != address(0)) {
                 if (rvmId != deployer) {
                     console2.log("  >>> MISMATCH! authorizedReactiveRvmId != DEPLOYER_ADDRESS");

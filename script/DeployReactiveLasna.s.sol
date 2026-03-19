@@ -45,7 +45,9 @@ contract DeployReactiveLasna is Script {
         console2.log("LASNA_REACTIVE_TWAMM_ADDRESS=", address(reactive));
         console2.log("");
         console2.log("IMPORTANT: Run initialize() after deployment to set up subscriptions:");
-        console2.log("  cast send", address(reactive), "\"initialize()\" --rpc-url $LASNA_RPC --private-key $PRIVATE_KEY");
+        console2.log(
+            "  cast send", address(reactive), "\"initialize()\" --rpc-url $LASNA_RPC --private-key $PRIVATE_KEY"
+        );
     }
 
     function _loadPrivateKey() internal view returns (uint256) {

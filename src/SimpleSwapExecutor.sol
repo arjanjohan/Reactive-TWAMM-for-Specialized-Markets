@@ -39,14 +39,10 @@ contract SimpleSwapExecutor is IUnlockCallback {
         }
 
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
-            zeroForOne: zeroForOne,
-            amountSpecified: -int256(amountIn),
-            sqrtPriceLimitX96: sqrtPriceLimitX96
+            zeroForOne: zeroForOne, amountSpecified: -int256(amountIn), sqrtPriceLimitX96: sqrtPriceLimitX96
         });
 
-        bytes memory result = poolManager.unlock(
-            abi.encode(OP_SWAP, msg.sender, key, params, minAmountOut)
-        );
+        bytes memory result = poolManager.unlock(abi.encode(OP_SWAP, msg.sender, key, params, minAmountOut));
 
         amountOut = abi.decode(result, (uint256));
     }
@@ -54,13 +50,8 @@ contract SimpleSwapExecutor is IUnlockCallback {
     function unlockCallback(bytes calldata data) external returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert OnlyPoolManager();
 
-        (
-            uint256 op,
-            address payer,
-            PoolKey memory key,
-            IPoolManager.SwapParams memory params,
-            uint256 minAmountOut
-        ) = abi.decode(data, (uint256, address, PoolKey, IPoolManager.SwapParams, uint256));
+        (uint256 op, address payer, PoolKey memory key, IPoolManager.SwapParams memory params, uint256 minAmountOut) =
+            abi.decode(data, (uint256, address, PoolKey, IPoolManager.SwapParams, uint256));
 
         if (op != OP_SWAP) revert InvalidOperation();
 
@@ -72,14 +63,18 @@ contract SimpleSwapExecutor is IUnlockCallback {
         if (delta0 < 0) {
             uint256 amount0In = uint256(uint128(-delta0));
             poolManager.sync(key.currency0);
-            require(IERC20(Currency.unwrap(key.currency0)).transferFrom(payer, address(poolManager), amount0In), "transfer0");
+            require(
+                IERC20(Currency.unwrap(key.currency0)).transferFrom(payer, address(poolManager), amount0In), "transfer0"
+            );
             poolManager.settle();
         }
 
         if (delta1 < 0) {
             uint256 amount1In = uint256(uint128(-delta1));
             poolManager.sync(key.currency1);
-            require(IERC20(Currency.unwrap(key.currency1)).transferFrom(payer, address(poolManager), amount1In), "transfer1");
+            require(
+                IERC20(Currency.unwrap(key.currency1)).transferFrom(payer, address(poolManager), amount1In), "transfer1"
+            );
             poolManager.settle();
         }
 

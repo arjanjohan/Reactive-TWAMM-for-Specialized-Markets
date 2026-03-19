@@ -37,11 +37,9 @@ contract ReactiveTWAMM is AbstractReactive {
     uint256 public constant ORDER_REGISTERED_TOPIC0 =
         0x6253400cc4d6a5c59c76a398cd5f895819e3c7ec9b1331138e54a2c638a06695;
     // keccak256("OrderCancelled(bytes32)")
-    uint256 public constant ORDER_CANCELLED_TOPIC0 =
-        0x5152abf959f6564662358c2e52b702259b78bac5ee7842a0f01937e670efcc7d;
+    uint256 public constant ORDER_CANCELLED_TOPIC0 = 0x5152abf959f6564662358c2e52b702259b78bac5ee7842a0f01937e670efcc7d;
     // keccak256("OrderCompleted(bytes32)")
-    uint256 public constant ORDER_COMPLETED_TOPIC0 =
-        0xc1471de81880c1b225e1d454a583a6f0fde1f88fb0f03ca678be2a3656c0f7c2;
+    uint256 public constant ORDER_COMPLETED_TOPIC0 = 0xc1471de81880c1b225e1d454a583a6f0fde1f88fb0f03ca678be2a3656c0f7c2;
 
     // ============ Errors ============
     error ReactiveTWAMM__InvalidOrder();
@@ -93,8 +91,8 @@ contract ReactiveTWAMM is AbstractReactive {
 
         // 1) CRON10 — periodic trigger for chunk execution
         service.subscribe(
-            block.chainid,       // Lasna chain
-            address(service),    // system contract emits cron events
+            block.chainid, // Lasna chain
+            address(service), // system contract emits cron events
             CRON10_TOPIC0,
             REACTIVE_IGNORE,
             REACTIVE_IGNORE,
@@ -106,7 +104,7 @@ contract ReactiveTWAMM is AbstractReactive {
             UNICHAIN_SEPOLIA_CHAIN_ID,
             targetHook,
             ORDER_REGISTERED_TOPIC0,
-            REACTIVE_IGNORE,     // any orderId
+            REACTIVE_IGNORE, // any orderId
             REACTIVE_IGNORE,
             REACTIVE_IGNORE
         );
@@ -116,7 +114,7 @@ contract ReactiveTWAMM is AbstractReactive {
             UNICHAIN_SEPOLIA_CHAIN_ID,
             targetHook,
             ORDER_CANCELLED_TOPIC0,
-            REACTIVE_IGNORE,     // any orderId
+            REACTIVE_IGNORE, // any orderId
             REACTIVE_IGNORE,
             REACTIVE_IGNORE
         );
@@ -126,7 +124,7 @@ contract ReactiveTWAMM is AbstractReactive {
             UNICHAIN_SEPOLIA_CHAIN_ID,
             targetHook,
             ORDER_COMPLETED_TOPIC0,
-            REACTIVE_IGNORE,     // any orderId
+            REACTIVE_IGNORE, // any orderId
             REACTIVE_IGNORE,
             REACTIVE_IGNORE
         );
@@ -248,11 +246,7 @@ contract ReactiveTWAMM is AbstractReactive {
         PoolId poolId = poolKey.toId();
 
         subscriptions[orderId] = Subscription({
-            targetHook: _targetHook,
-            poolKey: poolKey,
-            orderId: orderId,
-            lastExecutionTime: 0,
-            active: true
+            targetHook: _targetHook, poolKey: poolKey, orderId: orderId, lastExecutionTime: 0, active: true
         });
 
         orderIndex[orderId] = activeOrderIds.length;

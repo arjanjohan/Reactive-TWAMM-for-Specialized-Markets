@@ -52,9 +52,8 @@ contract SetupDemoEnvironment is Script {
         usdc.mint(deployer, 10_000_000_000_000_000_000 * 10 ** 6);
         react.mint(deployer, 2_000_000_000_000 * 10 ** 18);
 
-        (address token0, address token1) = address(usdc) < address(react)
-            ? (address(usdc), address(react))
-            : (address(react), address(usdc));
+        (address token0, address token1) =
+            address(usdc) < address(react) ? (address(usdc), address(react)) : (address(react), address(usdc));
         uint160 sqrtPriceX96 = _resolveInitialSqrtPrice(address(react), token0);
 
         PoolKey memory key = PoolKey({
@@ -76,10 +75,7 @@ contract SetupDemoEnvironment is Script {
         react.approve(address(swapExecutor), type(uint256).max);
 
         IPoolManager.ModifyLiquidityParams memory params = IPoolManager.ModifyLiquidityParams({
-            tickLower: -887220,
-            tickUpper: 887220,
-            liquidityDelta: int256(liquidityDelta),
-            salt: bytes32(0)
+            tickLower: -887220, tickUpper: 887220, liquidityDelta: int256(liquidityDelta), salt: bytes32(0)
         });
 
         liquidityRouter.modifyLiquidity(key, params, "");

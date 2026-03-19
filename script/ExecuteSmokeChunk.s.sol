@@ -51,10 +51,7 @@ contract ExecuteSmokeChunk is Script {
         IERC20(token1).approve(address(liquidityRouter), type(uint256).max);
 
         IPoolManager.ModifyLiquidityParams memory params = IPoolManager.ModifyLiquidityParams({
-            tickLower: -600,
-            tickUpper: 600,
-            liquidityDelta: int256(uint256(10_000e18)),
-            salt: bytes32(0)
+            tickLower: -600, tickUpper: 600, liquidityDelta: int256(uint256(10_000e18)), salt: bytes32(0)
         });
 
         liquidityRouter.modifyLiquidity(key, params, "");

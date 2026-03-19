@@ -19,7 +19,10 @@ import {PoolModifyLiquidityTest} from "@uniswap/v4-core/test/PoolModifyLiquidity
 
 contract MockToken is ERC20 {
     constructor(string memory name, string memory symbol) ERC20(name, symbol) {}
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 }
 
 /**
@@ -73,8 +76,7 @@ contract ReactiveCallbackTest is Test {
         tokenA = new MockToken("Token A", "TKA");
         tokenB = new MockToken("Token B", "TKB");
 
-        (MockToken t0, MockToken t1) = address(tokenA) < address(tokenB)
-            ? (tokenA, tokenB) : (tokenB, tokenA);
+        (MockToken t0, MockToken t1) = address(tokenA) < address(tokenB) ? (tokenA, tokenB) : (tokenB, tokenA);
 
         // Deploy hook
         deployCodeTo("TWAMMHook.sol:TWAMMHook", abi.encode(address(poolManager), deployer), HOOK_ADDRESS);
@@ -104,10 +106,13 @@ contract ReactiveCallbackTest is Test {
         vm.startPrank(lp);
         tokenA.approve(address(liquidityRouter), type(uint256).max);
         tokenB.approve(address(liquidityRouter), type(uint256).max);
-        liquidityRouter.modifyLiquidity(poolKey, IPoolManager.ModifyLiquidityParams({
-            tickLower: -887220, tickUpper: 887220,
-            liquidityDelta: int256(5e21), salt: bytes32(0)
-        }), "");
+        liquidityRouter.modifyLiquidity(
+            poolKey,
+            IPoolManager.ModifyLiquidityParams({
+                tickLower: -887220, tickUpper: 887220, liquidityDelta: int256(5e21), salt: bytes32(0)
+            }),
+            ""
+        );
         vm.stopPrank();
 
         // Fund Alice
@@ -123,7 +128,9 @@ contract ReactiveCallbackTest is Test {
         vm.startPrank(alice);
         tokenA.approve(address(hook), amount);
         orderId = hook.submitTWAMMOrder(
-            poolKey, amount, duration,
+            poolKey,
+            amount,
+            duration,
             Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenA) : address(tokenB)),
             Currency.wrap(address(tokenA) < address(tokenB) ? address(tokenB) : address(tokenA)),
             0
@@ -193,7 +200,8 @@ contract ReactiveCallbackTest is Test {
 
         // Decode the payload to inspect the reactiveRvmId argument
         // payload layout: selector (4 bytes) + abi-encoded args
-        bytes4 selector = bytes4(payload[0]) | (bytes4(payload[1]) >> 8) | (bytes4(payload[2]) >> 16) | (bytes4(payload[3]) >> 24);
+        bytes4 selector =
+            bytes4(payload[0]) | (bytes4(payload[1]) >> 8) | (bytes4(payload[2]) >> 16) | (bytes4(payload[3]) >> 24);
         // reactiveRvmId is the first ABI argument, bytes 4..36
         address encodedRvmId;
         bytes memory argSlice = new bytes(32);

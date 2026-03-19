@@ -90,12 +90,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         uint256 minOutputPerChunk
     );
 
-    event ChunkExecuted(
-        bytes32 indexed orderId,
-        uint256 chunkIndex,
-        uint256 amountIn,
-        uint256 amountOut
-    );
+    event ChunkExecuted(bytes32 indexed orderId, uint256 chunkIndex, uint256 amountIn, uint256 amountOut);
 
     event OrderCompleted(bytes32 indexed orderId);
     event OrderCancelled(bytes32 indexed orderId);
@@ -107,12 +102,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
 
     /// @notice Emitted alongside OrderSubmitted with full PoolKey for Reactive RVM auto-registration.
     event OrderRegisteredReactive(
-        bytes32 indexed orderId,
-        address currency0,
-        address currency1,
-        uint24 fee,
-        int24 tickSpacing,
-        address hooks
+        bytes32 indexed orderId, address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks
     );
 
     // ============ Constructor ============
@@ -172,12 +162,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         return (IHooks.beforeSwap.selector, BeforeSwapDelta.wrap(0), 0);
     }
 
-    function afterInitialize(
-        address,
-        PoolKey calldata key,
-        uint160,
-        int24
-    ) external override returns (bytes4) {
+    function afterInitialize(address, PoolKey calldata key, uint160, int24) external override returns (bytes4) {
         if (msg.sender != address(POOL_MANAGER)) revert TWAMMHook__OnlyPoolManager();
 
         // For this scaffold, we'll enable TWAMM for all pools that use this hook
@@ -189,12 +174,12 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         return IHooks.afterInitialize.selector;
     }
 
-    function beforeAddLiquidity(
-        address,
-        PoolKey calldata,
-        IPoolManager.ModifyLiquidityParams calldata,
-        bytes calldata
-    ) external pure override returns (bytes4) {
+    function beforeAddLiquidity(address, PoolKey calldata, IPoolManager.ModifyLiquidityParams calldata, bytes calldata)
+        external
+        pure
+        override
+        returns (bytes4)
+    {
         revert HookNotImplemented();
     }
 
@@ -229,13 +214,11 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         revert HookNotImplemented();
     }
 
-    function afterSwap(
-        address,
-        PoolKey calldata key,
-        IPoolManager.SwapParams calldata,
-        BalanceDelta,
-        bytes calldata
-    ) external override returns (bytes4, int128) {
+    function afterSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, BalanceDelta, bytes calldata)
+        external
+        override
+        returns (bytes4, int128)
+    {
         if (msg.sender != address(POOL_MANAGER)) revert TWAMMHook__OnlyPoolManager();
 
         // Skip processing if we're in the middle of executing a TWAMM chunk
@@ -246,23 +229,21 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         return (IHooks.afterSwap.selector, 0);
     }
 
-    function beforeDonate(
-        address,
-        PoolKey calldata,
-        uint256,
-        uint256,
-        bytes calldata
-    ) external pure override returns (bytes4) {
+    function beforeDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
+        external
+        pure
+        override
+        returns (bytes4)
+    {
         revert HookNotImplemented();
     }
 
-    function afterDonate(
-        address,
-        PoolKey calldata,
-        uint256,
-        uint256,
-        bytes calldata
-    ) external pure override returns (bytes4) {
+    function afterDonate(address, PoolKey calldata, uint256, uint256, bytes calldata)
+        external
+        pure
+        override
+        returns (bytes4)
+    {
         revert HookNotImplemented();
     }
 
@@ -319,13 +300,7 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         IERC20(Currency.unwrap(tokenIn)).transferFrom(msg.sender, address(this), amount);
 
         emit OrderSubmitted(
-            orderId,
-            msg.sender,
-            poolId,
-            amount,
-            numChunks,
-            block.timestamp + duration,
-            minOutputPerChunk
+            orderId, msg.sender, poolId, amount, numChunks, block.timestamp + duration, minOutputPerChunk
         );
 
         // Emit full PoolKey for Reactive RVM auto-registration
@@ -378,7 +353,10 @@ contract TWAMMHook is IHooks, ITWAMMHook {
      * @dev reactiveRvmId is injected by Reactive infra (= deployer EOA, not the Lasna contract address).
      *      Set authorizedReactiveRvmId to the deployer EOA via setReactiveCallbackConfig().
      */
-    function executeTWAMMChunkReactive(address reactiveRvmId, PoolKey calldata key, bytes32 orderId) external whenNotPaused {
+    function executeTWAMMChunkReactive(address reactiveRvmId, PoolKey calldata key, bytes32 orderId)
+        external
+        whenNotPaused
+    {
         if (msg.sender != reactiveCallbackProxy || reactiveRvmId != authorizedReactiveRvmId) {
             revert TWAMMHook__UnauthorizedReactiveCallback();
         }
@@ -514,12 +492,8 @@ contract TWAMMHook is IHooks, ITWAMMHook {
 
         // Store execution context for unlock callback
         bool zeroForOne = order.tokenIn == key.currency0;
-        _currentExecution = ChunkExecution({
-            key: key,
-            orderId: orderId,
-            chunkAmount: chunkAmount,
-            zeroForOne: zeroForOne
-        });
+        _currentExecution =
+            ChunkExecution({key: key, orderId: orderId, chunkAmount: chunkAmount, zeroForOne: zeroForOne});
 
         // Prepare swap parameters and execute via unlock
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
@@ -569,14 +543,18 @@ contract TWAMMHook is IHooks, ITWAMMHook {
         if (delta0 < 0) {
             uint256 amount0In = uint256(uint128(-delta0));
             POOL_MANAGER.sync(key.currency0);
-            require(IERC20(Currency.unwrap(key.currency0)).transfer(address(POOL_MANAGER), amount0In), "Transfer failed");
+            require(
+                IERC20(Currency.unwrap(key.currency0)).transfer(address(POOL_MANAGER), amount0In), "Transfer failed"
+            );
             POOL_MANAGER.settle();
         }
 
         if (delta1 < 0) {
             uint256 amount1In = uint256(uint128(-delta1));
             POOL_MANAGER.sync(key.currency1);
-            require(IERC20(Currency.unwrap(key.currency1)).transfer(address(POOL_MANAGER), amount1In), "Transfer failed");
+            require(
+                IERC20(Currency.unwrap(key.currency1)).transfer(address(POOL_MANAGER), amount1In), "Transfer failed"
+            );
             POOL_MANAGER.settle();
         }
 

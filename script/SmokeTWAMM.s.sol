@@ -31,9 +31,8 @@ contract SmokeTWAMM is Script {
         TestToken tokenA = new TestToken{salt: saltA}("TWAMM Smoke A", "TSA");
         TestToken tokenB = new TestToken{salt: saltB}("TWAMM Smoke B", "TSB");
 
-        (address token0, address token1) = address(tokenA) < address(tokenB)
-            ? (address(tokenA), address(tokenB))
-            : (address(tokenB), address(tokenA));
+        (address token0, address token1) =
+            address(tokenA) < address(tokenB) ? (address(tokenA), address(tokenB)) : (address(tokenB), address(tokenA));
 
         PoolKey memory key = PoolKey({
             currency0: Currency.wrap(token0),
@@ -54,11 +53,7 @@ contract SmokeTWAMM is Script {
 
         inToken.approve(hookAddr, 100 ether);
         bytes32 orderId = _submitOrderCompat(
-            key,
-            100 ether,
-            10 minutes,
-            Currency.wrap(address(inToken)),
-            Currency.wrap(address(outToken))
+            key, 100 ether, 10 minutes, Currency.wrap(address(inToken)), Currency.wrap(address(outToken))
         );
 
         vm.stopBroadcast();
@@ -78,15 +73,8 @@ contract SmokeTWAMM is Script {
         Currency tokenOut
     ) internal returns (bytes32 orderId) {
         // Modern 6-arg signature: submitTWAMMOrder((...),uint256,uint256,address,address,uint256)
-        bytes memory modern = abi.encodeWithSelector(
-            TWAMMHook.submitTWAMMOrder.selector,
-            key,
-            amount,
-            duration,
-            tokenIn,
-            tokenOut,
-            0
-        );
+        bytes memory modern =
+            abi.encodeWithSelector(TWAMMHook.submitTWAMMOrder.selector, key, amount, duration, tokenIn, tokenOut, 0);
 
         (bool ok, bytes memory ret) = hookAddr.call(modern);
         if (ok && ret.length >= 32) {
@@ -96,12 +84,7 @@ contract SmokeTWAMM is Script {
         // Legacy 5-arg signature fallback for older deployments.
         bytes4 legacySelector = 0x24aacde0;
         bytes memory legacy = abi.encodeWithSelector(
-            legacySelector,
-            key,
-            amount,
-            duration,
-            Currency.unwrap(tokenIn),
-            Currency.unwrap(tokenOut)
+            legacySelector, key, amount, duration, Currency.unwrap(tokenIn), Currency.unwrap(tokenOut)
         );
 
         (ok, ret) = hookAddr.call(legacy);
