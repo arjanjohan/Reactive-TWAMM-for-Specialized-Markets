@@ -24,16 +24,51 @@ import {
   parseUnits,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = dirname(SCRIPT_DIR);
+
+function loadEnvFile(filePath) {
+  if (!existsSync(filePath)) return;
+
+  const lines = readFileSync(filePath, "utf8").split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+
+    const [, key, rawValue] = match;
+    if (process.env[key] !== undefined) continue;
+
+    let value = rawValue.trim();
+    if (
+      (value.startsWith("\"") && value.endsWith("\"")) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    process.env[key] = value;
+  }
+}
+
+// Support the repo's usual workflow without requiring `set -a; source .env`.
+loadEnvFile(join(REPO_ROOT, ".env"));
+loadEnvFile(join(REPO_ROOT, ".env.addresses"));
 
 const CFG = {
   rpcUrl: process.env.UNICHAIN_RPC || "https://sepolia.unichain.org",
   botPk: process.env.BOT_PK || process.env.PRIVATE_KEY,
 
-  twammHook: process.env.TWAMM_HOOK || "0x1Eb187eC6240924c192230bfBbde6FDF13ce50C0",
-  swapExecutor:
-    process.env.SWAP_EXECUTOR || process.env.SWAP_EXECUTOR_ADDRESS || "0x193B245198db2E06aEC05539413C665CF5885960",
-  usdc: process.env.USDC || process.env.USDC_ADDRESS || "0xc19445639A1B13F024924832267F27Cc868b6a62",
-  react: process.env.REACT_TOKEN || process.env.REACT_ADDRESS || "0xA5d9D845F4776289650d45EE9bbF5Ec98e203cBF",
+  twammHook: process.env.TWAMM_HOOK,
+  swapExecutor: process.env.SWAP_EXECUTOR || process.env.SWAP_EXECUTOR_ADDRESS,
+  usdc: process.env.USDC || process.env.USDC_ADDRESS,
+  react: process.env.REACT_TOKEN || process.env.REACT_ADDRESS,
 
   fee: 3000,
   tickSpacing: 60,
@@ -373,6 +408,10 @@ async function runNoiseLoop({ publicClient, walletClient, account }) {
 
 async function main() {
   if (!CFG.botPk) throw new Error("Missing BOT_PK (or PRIVATE_KEY)");
+  if (!CFG.twammHook) throw new Error("Missing TWAMM_HOOK — run: node script/sync_addresses.mjs && source .env");
+  if (!CFG.swapExecutor) throw new Error("Missing SWAP_EXECUTOR — run: node script/sync_addresses.mjs && source .env");
+  if (!CFG.usdc) throw new Error("Missing USDC — run: node script/sync_addresses.mjs && source .env");
+  if (!CFG.react) throw new Error("Missing REACT_TOKEN — run: node script/sync_addresses.mjs && source .env");
 
   const account = privateKeyToAccount(CFG.botPk.startsWith("0x") ? CFG.botPk : `0x${CFG.botPk}`);
   const publicClient = createPublicClient({ chain: CHAIN, transport: http(CFG.rpcUrl) });

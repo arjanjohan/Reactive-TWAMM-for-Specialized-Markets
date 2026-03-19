@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import type { NextPage } from "next";
-import { useAccount, usePublicClient, useReadContract, useSendTransaction, useSwitchChain, useWriteContract } from "wagmi";
 import {
   concatHex,
   createPublicClient,
@@ -19,10 +19,25 @@ import {
   parseUnits,
   toHex,
 } from "viem";
-import { ArrowPathIcon, ArrowsUpDownIcon, BoltIcon, ChartBarIcon, ClockIcon, XMarkIcon } from "@heroicons/react/24/outline";
-import twammHookAbi from "~~/contracts/abi/TWAMMHook.json";
+import {
+  useAccount,
+  usePublicClient,
+  useReadContract,
+  useSendTransaction,
+  useSwitchChain,
+  useWriteContract,
+} from "wagmi";
+import {
+  ArrowPathIcon,
+  ArrowsUpDownIcon,
+  BoltIcon,
+  ChartBarIcon,
+  ClockIcon,
+  XMarkIcon,
+} from "@heroicons/react/24/outline";
 import reactiveTwammAbi from "~~/contracts/abi/ReactiveTWAMM.json";
 import { Address } from "@scaffold-ui/components";
+import twammHookAbi from "~~/contracts/abi/TWAMMHook.json";
 import { useScaffoldWriteContract, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { ADDRS, CHAIN_ID, LASNA, POOL_MANAGER } from "./addresses";
 
@@ -154,17 +169,18 @@ const Home: NextPage = () => {
     args: address ? [address, ADDRS.hook] : undefined,
     query: { enabled: Boolean(address) },
   });
-
-
-
   const tokenInBalance = useMemo(() => {
     if (!tokenInBalanceRaw) return "0";
-    return Number(formatUnits(tokenInBalanceRaw, tokenIn.decimals)).toLocaleString(undefined, { maximumFractionDigits: 4 });
+    return Number(formatUnits(tokenInBalanceRaw, tokenIn.decimals)).toLocaleString(undefined, {
+      maximumFractionDigits: 4,
+    });
   }, [tokenInBalanceRaw, tokenIn.decimals]);
 
   const tokenOutBalance = useMemo(() => {
     if (!tokenOutBalanceRaw) return "0";
-    return Number(formatUnits(tokenOutBalanceRaw, tokenOut.decimals)).toLocaleString(undefined, { maximumFractionDigits: 4 });
+    return Number(formatUnits(tokenOutBalanceRaw, tokenOut.decimals)).toLocaleString(undefined, {
+      maximumFractionDigits: 4,
+    });
   }, [tokenOutBalanceRaw, tokenOut.decimals]);
 
   const durationSeconds = useMemo(() => {
@@ -214,7 +230,6 @@ const Home: NextPage = () => {
     query: { enabled: Boolean(lastOrderId) },
   });
 
-
   const claimableOutput = useMemo(() => {
     if (!claimableOutputRaw) return "0";
     return Number(formatUnits(claimableOutputRaw as bigint, tokenOut.decimals)).toLocaleString(undefined, {
@@ -222,8 +237,9 @@ const Home: NextPage = () => {
     });
   }, [claimableOutputRaw, tokenOut.decimals]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { writeContractAsync: writeTwamm, isMining: isTwammMining } = useScaffoldWriteContract({ contractName: "TWAMMHook" }) as any;
+  const { writeContractAsync: writeTwamm, isMining: isTwammMining } = useScaffoldWriteContract({
+    contractName: "TWAMMHook",
+  }) as any;
   const { writeContractAsync: writeErc20 } = useWriteContract();
   const { sendTransactionAsync } = useSendTransaction();
 
@@ -232,13 +248,7 @@ const Home: NextPage = () => {
   const poolId = useMemo(() => {
     return keccak256(
       encodeAbiParameters(
-        [
-          { type: "address" },
-          { type: "address" },
-          { type: "uint24" },
-          { type: "int24" },
-          { type: "address" },
-        ],
+        [{ type: "address" }, { type: "address" }, { type: "uint24" }, { type: "int24" }, { type: "address" }],
         [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks],
       ),
     );
@@ -252,6 +262,7 @@ const Home: NextPage = () => {
       trendPrice: number;
       chunkIn: string;
       chunkOut: string;
+      source: "chunk" | "swap";
     }[]
   >([]);
   const [livePoolPrice, setLivePoolPrice] = useState<number | null>(null);
@@ -285,7 +296,6 @@ const Home: NextPage = () => {
 
   useEffect(() => {
     let cancelled = false;
-
     const getPoolStateSlot = () => keccak256(concatHex([poolId, toHex(POOLS_SLOT, { size: 32 })]));
 
     const fetchLivePoolPrice = async () => {
@@ -315,56 +325,148 @@ const Home: NextPage = () => {
       }
     };
 
-    const fetchSwapSeries = async () => {
+    const fetchPriceSeries = async () => {
       if (!publicClient) return;
       try {
+        type RawPoint = {
+          ts: number;
+          execPrice: number;
+          chunkIn: string;
+          chunkOut: string;
+          source: "chunk" | "swap";
+          blockNumber: number;
+        };
+        const rawPoints: RawPoint[] = [];
         const latestBlock = await publicClient.getBlockNumber();
-        const logs = await publicClient.getLogs({
+
+        // --- 1. ChunkExecuted events from hook ---
+        const chunkEvent = parseAbiItem(
+          "event ChunkExecuted(bytes32 indexed orderId, uint256 chunkIndex, uint256 amountIn, uint256 amountOut)",
+        );
+        const chunkLogs = await publicClient.getLogs({
+          address: ADDRS.hook,
+          event: chunkEvent,
+          fromBlock: 0n,
+          toBlock: "latest",
+        });
+
+        // Collect all block numbers for timestamp resolution
+        const allBlockNums = new Set<number>();
+        chunkLogs.forEach(l => {
+          if (l.blockNumber) allBlockNums.add(Number(l.blockNumber));
+        });
+
+        // --- 2. Swap events from PoolManager ---
+        const swapLogs = await publicClient.getLogs({
           address: POOL_MANAGER,
           event: swapEvent,
           args: { id: poolId },
           fromBlock: latestBlock > 200_000n ? latestBlock - 200_000n : 0n,
           toBlock: "latest",
         });
+        swapLogs.forEach(l => {
+          if (l.blockNumber) allBlockNums.add(Number(l.blockNumber));
+        });
 
-        const blocks = [...new Set(logs.map(l => l.blockNumber).filter(Boolean).map(b => Number(b)))];
+        // Resolve block timestamps
         const blockTs = new Map<number, number>();
         await Promise.all(
-          blocks.map(async b => {
+          [...allBlockNums].map(async b => {
             const block = await publicClient.getBlock({ blockNumber: BigInt(b) });
             blockTs.set(b, Number(block.timestamp));
           }),
         );
 
+        // Process chunk logs
+        const orderTokenIn = new Map<string, string>();
+        for (const log of chunkLogs) {
+          const args = (log as any).args || {};
+          const orderId = args.orderId as string;
+          const amountInRaw = args.amountIn as bigint;
+          const amountOutRaw = args.amountOut as bigint;
+          if (!amountInRaw || !amountOutRaw || amountInRaw === 0n || amountOutRaw === 0n) continue;
+
+          if (!orderTokenIn.has(orderId)) {
+            try {
+              const order = await publicClient.readContract({
+                address: ADDRS.hook,
+                abi: twammHookAbi as any,
+                functionName: "getOrder",
+                args: [orderId],
+              });
+              orderTokenIn.set(orderId, ((order as any).tokenIn as string).toLowerCase());
+            } catch {
+              continue;
+            }
+          }
+
+          const tIn = orderTokenIn.get(orderId)!;
+          const inIsUsdc = tIn === ADDRS.usdc.toLowerCase();
+          const inDec = inIsUsdc ? 6 : 18;
+          const outDec = inIsUsdc ? 18 : 6;
+          const amtIn = Number(formatUnits(amountInRaw, inDec));
+          const amtOut = Number(formatUnits(amountOutRaw, outDec));
+
+          let reactUsd: number;
+          if (inIsUsdc) {
+            reactUsd = amtOut > 0 ? amtIn / amtOut : 0;
+          } else {
+            reactUsd = amtIn > 0 ? amtOut / amtIn : 0;
+          }
+          if (reactUsd <= 0) continue;
+
+          const bn = Number(log.blockNumber || 0n);
+          rawPoints.push({
+            ts: blockTs.get(bn) || Math.floor(Date.now() / 1000),
+            execPrice: reactUsd,
+            chunkIn: `${amtIn.toFixed(inIsUsdc ? 2 : 4)} ${inIsUsdc ? "USDC" : "REACT"}`,
+            chunkOut: `${amtOut.toFixed(inIsUsdc ? 4 : 2)} ${inIsUsdc ? "REACT" : "USDC"}`,
+            source: "chunk",
+            blockNumber: bn,
+          });
+        }
+
+        // Process swap logs (from PoolManager — includes arb bot swaps etc.)
         const dec0 = poolKey.currency0.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
         const dec1 = poolKey.currency1.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
-
-        const points: { index: number; ts: number; execPrice: number; trendPrice: number; chunkIn: string; chunkOut: string }[] = [];
-        let ema = 0;
-
-        logs.forEach((log, idx) => {
+        for (const log of swapLogs) {
           const args = (log as any).args || {};
           const sqrt = Number(args.sqrtPriceX96 || 0n);
-          if (!sqrt) return;
+          if (!sqrt) continue;
 
           const p1Per0 = (sqrt / 2 ** 96) ** 2 * 10 ** (dec0 - dec1);
           let reactUsd = p1Per0;
-
           if (poolKey.currency0.toLowerCase() === ADDRS.usdc.toLowerCase()) {
             reactUsd = p1Per0 > 0 ? 1 / p1Per0 : 0;
           }
+          if (reactUsd <= 0) continue;
 
-          ema = points.length === 0 ? reactUsd : ema * 0.6 + reactUsd * 0.4;
           const bn = Number(log.blockNumber || 0n);
-
-          points.push({
-            index: idx + 1,
-            ts: blockTs.get(bn) || Math.floor(Date.now() / 1000) + idx,
+          rawPoints.push({
+            ts: blockTs.get(bn) || Math.floor(Date.now() / 1000),
             execPrice: reactUsd,
-            trendPrice: ema,
             chunkIn: "-",
             chunkOut: "-",
+            source: "swap",
+            blockNumber: bn,
           });
+        }
+
+        // Sort by block number then compute EMA
+        rawPoints.sort((a, b) => a.blockNumber - b.blockNumber || a.ts - b.ts);
+
+        let ema = 0;
+        const points = rawPoints.map((p, idx) => {
+          ema = idx === 0 ? p.execPrice : ema * 0.6 + p.execPrice * 0.4;
+          return {
+            index: idx + 1,
+            ts: p.ts,
+            execPrice: p.execPrice,
+            trendPrice: ema,
+            chunkIn: p.chunkIn,
+            chunkOut: p.chunkOut,
+            source: p.source,
+          };
         });
 
         if (!cancelled) setChartPoints(points);
@@ -374,9 +476,9 @@ const Home: NextPage = () => {
     };
 
     fetchLivePoolPrice();
-    fetchSwapSeries();
+    fetchPriceSeries();
     const priceId = setInterval(fetchLivePoolPrice, 8000);
-    const id = setInterval(fetchSwapSeries, 10000);
+    const id = setInterval(fetchPriceSeries, 10000);
     return () => {
       cancelled = true;
       clearInterval(priceId);
@@ -416,7 +518,15 @@ const Home: NextPage = () => {
         if (!cancelled) setLasnaActiveOrderCount(Number(activeCount));
 
         // Fetch debt from Reactive system contract
-        const debtsAbi = [{ type: "function", name: "debts", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" }] as const;
+        const debtsAbi = [
+          {
+            type: "function",
+            name: "debts",
+            inputs: [{ name: "", type: "address" }],
+            outputs: [{ name: "", type: "uint256" }],
+            stateMutability: "view",
+          },
+        ] as const;
         try {
           const debt = await lasnaClient.readContract({
             address: LASNA.systemContract,
@@ -448,9 +558,27 @@ const Home: NextPage = () => {
   useEffect(() => {
     let cancelled = false;
     const proxyAbi = [
-      { type: "function", name: "reserves", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" },
-      { type: "function", name: "debts", inputs: [{ name: "", type: "address" }], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" },
-      { type: "function", name: "depositTo", inputs: [{ name: "", type: "address" }], outputs: [], stateMutability: "payable" },
+      {
+        type: "function",
+        name: "reserves",
+        inputs: [{ name: "", type: "address" }],
+        outputs: [{ name: "", type: "uint256" }],
+        stateMutability: "view",
+      },
+      {
+        type: "function",
+        name: "debts",
+        inputs: [{ name: "", type: "address" }],
+        outputs: [{ name: "", type: "uint256" }],
+        stateMutability: "view",
+      },
+      {
+        type: "function",
+        name: "depositTo",
+        inputs: [{ name: "", type: "address" }],
+        outputs: [],
+        stateMutability: "payable",
+      },
     ] as const;
 
     const fetchCallbackState = async () => {
@@ -565,8 +693,16 @@ const Home: NextPage = () => {
     const exec = filteredChartPoints.map(p => toXY(p.ts, p.execPrice)).join(" ");
     const trend = filteredChartPoints.map(p => toXY(p.ts, p.trendPrice)).join(" ");
 
-    const xStart = new Date(minTs * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    const xEnd = new Date(maxTs * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const xStart = new Date(minTs * 1000).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const xEnd = new Date(maxTs * 1000).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
 
     return { exec, trend, yMin, yMax, xStart, xEnd };
   }, [filteredChartPoints]);
@@ -594,7 +730,6 @@ const Home: NextPage = () => {
     try {
       setFlowStatus("Submitting order...");
       const minOutBase = parseUnits(minOutputPerChunk || "0", tokenOut.decimals);
-
       const submitHash = await writeTwamm({
         functionName: "submitTWAMMOrder",
         args: [poolKey, amountInBase, BigInt(durationSeconds), tokenIn.address as `0x${string}`, tokenOut.address as `0x${string}`, minOutBase],
@@ -769,7 +904,10 @@ const Home: NextPage = () => {
 
   const mintDemo = async (token: "USDC" | "REACT") => {
     if (!address) return;
-    const tokenCfg = token === "USDC" ? { address: ADDRS.usdc, decimals: 6, amount: "10000" } : { address: ADDRS.react, decimals: 18, amount: "10000" };
+    const tokenCfg =
+      token === "USDC"
+        ? { address: ADDRS.usdc, decimals: 6, amount: "10000" }
+        : { address: ADDRS.react, decimals: 18, amount: "10000" };
     await writeErc20({
       address: tokenCfg.address,
       abi: mockErc20Abi,
@@ -780,16 +918,19 @@ const Home: NextPage = () => {
 
   return (
     <main className="mx-auto max-w-xl px-4 py-10 space-y-5">
+      <div className="flex justify-center">
+        <Image src="/logo.png" alt="Reactive TWAMM" width={400} height={400} priority />
+      </div>
       <section className="card bg-base-100 border border-primary/30 shadow-xl shadow-primary/10">
         <div className="card-body">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-black">ReactiveTWAMM.sol</h1>
             <div className="badge badge-primary badge-outline">Reactive Lasna</div>
-          </div>            <Address
-              address={LASNA.reactiveTwamm}
-              blockExplorerAddressLink={`https://lasna.reactscan.net/address/${LASNA.reactiveTwamm}`}
-            />
-
+          </div>
+          <Address
+            address={LASNA.reactiveTwamm}
+            blockExplorerAddressLink={`https://lasna.reactscan.net/address/${LASNA.reactiveTwamm}`}
+          />
 
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
@@ -810,23 +951,43 @@ const Home: NextPage = () => {
             </div>
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
               <p className="text-base-content/70">Debt</p>
-              <p className={`font-semibold ${lasnaDebt !== "0" && lasnaDebt !== "?" ? "text-error" : ""}`}>{lasnaDebt}</p>
+              <p className={`font-semibold ${lasnaDebt !== "0" && lasnaDebt !== "?" ? "text-error" : ""}`}>
+                {lasnaDebt}
+              </p>
             </div>
           </div>
 
-          {(lasnaDebt !== "0" && lasnaDebt !== "?" || (lasnaReactiveBalance !== "-" && lasnaReactiveBalance !== "error" && parseFloat(lasnaReactiveBalance) < 0.01)) && (
+          {((lasnaDebt !== "0" && lasnaDebt !== "?") ||
+            (lasnaReactiveBalance !== "-" &&
+              lasnaReactiveBalance !== "error" &&
+              parseFloat(lasnaReactiveBalance) < 0.01)) && (
             <div className="alert alert-warning text-sm">
-              <span>{lasnaDebt !== "0" && lasnaDebt !== "?" ? "Contract has debt and may be inactive." : "Contract balance is low."} Fund and cover debt to reactivate.</span>
+              <span>
+                {lasnaDebt !== "0" && lasnaDebt !== "?"
+                  ? "Contract has debt and may be inactive."
+                  : "Contract balance is low."}{" "}
+                Fund and cover debt to reactivate.
+              </span>
             </div>
           )}
 
           <div className="flex gap-2 items-end">
             <label className="form-control flex-1">
               <span className="label-text text-xs">Fund amount (REACT)</span>
-              <input className="input input-bordered input-sm" value={fundAmount} onChange={e => setFundAmount(e.target.value)} />
+              <input
+                className="input input-bordered input-sm"
+                value={fundAmount}
+                onChange={e => setFundAmount(e.target.value)}
+              />
             </label>
-            <button className="btn btn-sm btn-outline" onClick={fundLasnaContract}>Fund</button>
-            <button className="btn btn-sm btn-error btn-outline" onClick={coverLasnaDebt} disabled={lasnaDebt === "0" || lasnaDebt === "?"}>
+            <button className="btn btn-sm btn-outline" onClick={fundLasnaContract}>
+              Fund
+            </button>
+            <button
+              className="btn btn-sm btn-error btn-outline"
+              onClick={coverLasnaDebt}
+              disabled={lasnaDebt === "0" || lasnaDebt === "?"}
+            >
               Cover Debt
             </button>
           </div>
@@ -836,10 +997,11 @@ const Home: NextPage = () => {
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-black">TWAMMHook.sol</h1>
             <span className="badge badge-outline badge-sm border-[#FC0FC0] text-[#FC0FC0]">Unichain Sepolia</span>
-          </div>        <Address
-              address={ADDRS.hook}
-              blockExplorerAddressLink={`https://unichain-sepolia.blockscout.com/address/${ADDRS.hook}`}
-            />
+          </div>
+          <Address
+            address={ADDRS.hook}
+            blockExplorerAddressLink={`https://unichain-sepolia.blockscout.com/address/${ADDRS.hook}`}
+          />
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
               <p className="text-base-content/70">Callback Reserves</p>
@@ -847,22 +1009,36 @@ const Home: NextPage = () => {
             </div>
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
               <p className="text-base-content/70">Callback Debt</p>
-              <p className={`font-semibold ${callbackDebt !== "0" && callbackDebt !== "?" ? "text-error" : ""}`}>{callbackDebt} ETH</p>
+              <p className={`font-semibold ${callbackDebt !== "0" && callbackDebt !== "?" ? "text-error" : ""}`}>
+                {callbackDebt} ETH
+              </p>
             </div>
           </div>
 
-          {(callbackDebt !== "0" && callbackDebt !== "?" || (callbackReserves !== "-" && callbackReserves !== "?" && parseFloat(callbackReserves) < 0.005)) && (
+          {((callbackDebt !== "0" && callbackDebt !== "?") ||
+            (callbackReserves !== "-" && callbackReserves !== "?" && parseFloat(callbackReserves) < 0.005)) && (
             <div className="alert alert-warning text-sm">
-              <span>{callbackDebt !== "0" && callbackDebt !== "?" ? "Callback delivery has debt." : "Callback reserves are low."} Fund the callback proxy to enable cross-chain delivery.</span>
+              <span>
+                {callbackDebt !== "0" && callbackDebt !== "?"
+                  ? "Callback delivery has debt."
+                  : "Callback reserves are low."}{" "}
+                Fund the callback proxy to enable cross-chain delivery.
+              </span>
             </div>
           )}
 
           <div className="flex gap-2 items-end">
             <label className="form-control flex-1">
               <span className="label-text text-xs">Fund amount (ETH on Unichain)</span>
-              <input className="input input-bordered input-sm" value={callbackFundAmount} onChange={e => setCallbackFundAmount(e.target.value)} />
+              <input
+                className="input input-bordered input-sm"
+                value={callbackFundAmount}
+                onChange={e => setCallbackFundAmount(e.target.value)}
+              />
             </label>
-            <button className="btn btn-sm btn-outline" onClick={fundCallbackProxy}>Fund Callback</button>
+            <button className="btn btn-sm btn-outline" onClick={fundCallbackProxy}>
+              Fund Callback
+            </button>
           </div>
         </div>
       </section>
@@ -872,7 +1048,9 @@ const Home: NextPage = () => {
           <div className="rounded-2xl border border-base-300 bg-base-200 p-3">
             <div className="flex items-center justify-between text-sm mb-1">
               <span className="font-semibold">You pay</span>
-              <span className="text-base-content/70">Balance: {tokenInBalance} {tokenIn.symbol}</span>
+              <span className="text-base-content/70">
+                Balance: {tokenInBalance} {tokenIn.symbol}
+              </span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <input
@@ -893,7 +1071,9 @@ const Home: NextPage = () => {
           <div className="rounded-2xl border border-base-300 bg-base-200 p-3">
             <div className="flex items-center justify-between text-sm mb-1">
               <span className="font-semibold">You receive (est.)</span>
-              <span className="text-base-content/70">Balance: {tokenOutBalance} {tokenOut.symbol}</span>
+              <span className="text-base-content/70">
+                Balance: {tokenOutBalance} {tokenOut.symbol}
+              </span>
             </div>
             <div className="flex items-center justify-between gap-2">
               <div className="text-2xl font-semibold">~{estimatedTotalOut}</div>
@@ -904,11 +1084,19 @@ const Home: NextPage = () => {
           <div className="grid grid-cols-3 gap-2">
             <label className="form-control col-span-2">
               <span className="label-text text-xs">Duration</span>
-              <input className="input input-bordered" value={durationValue} onChange={e => setDurationValue(e.target.value)} />
+              <input
+                className="input input-bordered"
+                value={durationValue}
+                onChange={e => setDurationValue(e.target.value)}
+              />
             </label>
             <label className="form-control">
               <span className="label-text text-xs">Unit</span>
-              <select className="select select-bordered" value={durationUnit} onChange={e => setDurationUnit(e.target.value as DurationUnit)}>
+              <select
+                className="select select-bordered"
+                value={durationUnit}
+                onChange={e => setDurationUnit(e.target.value as DurationUnit)}
+              >
                 <option value="minutes">min</option>
                 <option value="hours">hour</option>
                 <option value="days">day</option>
@@ -927,11 +1115,15 @@ const Home: NextPage = () => {
 
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
-              <p className="text-base-content/70 flex items-center gap-1"><ClockIcon className="h-3 w-3" /> Seconds</p>
+              <p className="text-base-content/70 flex items-center gap-1">
+                <ClockIcon className="h-3 w-3" /> Seconds
+              </p>
               <p className="font-semibold">{durationSeconds}</p>
             </div>
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
-              <p className="text-base-content/70 flex items-center gap-1"><ChartBarIcon className="h-3 w-3" /> Chunks</p>
+              <p className="text-base-content/70 flex items-center gap-1">
+                <ChartBarIcon className="h-3 w-3" /> Chunks
+              </p>
               <p className="font-semibold">{chunkCount}</p>
             </div>
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
@@ -963,7 +1155,11 @@ const Home: NextPage = () => {
             <button className="btn btn-primary w-full" disabled={!canSubmitOrder || !hasEnoughAllowance || isTwammMining || lasnaSubscribing} onClick={submitOrder}>
               <BoltIcon className="h-4 w-4" /> 2. Submit Order
             </button>
-            <button className="btn btn-secondary w-full" disabled={!lastOrderId || lasnaSubscribing} onClick={subscribeLastOrder}>
+            <button
+              className="btn btn-secondary w-full"
+              disabled={!lastOrderId || lasnaSubscribing}
+              onClick={subscribeLastOrder}
+            >
               <BoltIcon className="h-4 w-4" /> 3. Subscribe
             </button>
           </div>
@@ -986,7 +1182,9 @@ const Home: NextPage = () => {
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span>Chunks executed</span>
-                <span className="font-semibold">{orderProgress.executed} / {orderProgress.total}</span>
+                <span className="font-semibold">
+                  {orderProgress.executed} / {orderProgress.total}
+                </span>
               </div>
               <progress
                 className="progress progress-primary w-full"
@@ -1000,19 +1198,32 @@ const Home: NextPage = () => {
           )}
 
           <div className="flex gap-2">
-            <button className="btn btn-outline flex-1" disabled={!lastOrderId || lasnaSubscribing} onClick={executeManual}>
+            <button
+              className="btn btn-outline flex-1"
+              disabled={!lastOrderId || lasnaSubscribing}
+              onClick={executeManual}
+            >
               <ArrowPathIcon className="h-4 w-4" /> Execute (manual)
             </button>
-            <button className="btn btn-accent flex-1" disabled={!lastOrderId || isTwammMining} onClick={claim}>
-              Claim
+            <button
+              className="btn btn-accent flex-1"
+              disabled={!lastOrderId || isTwammMining || claimableOutput === "0"}
+              onClick={claim}
+            >
+              Claim {claimableOutput !== "0" ? `(${claimableOutput} ${tokenOut.symbol})` : ""}
             </button>
-            <button className="btn btn-error btn-outline flex-1" disabled={!lastOrderId || isTwammMining} onClick={cancelOrder}>
+            <button
+              className="btn btn-error btn-outline flex-1"
+              disabled={!lastOrderId || isTwammMining}
+              onClick={cancelOrder}
+            >
               <XMarkIcon className="h-4 w-4" /> Cancel
             </button>
           </div>
 
           <p className="text-xs text-base-content/60">
-            Reactive should execute chunks automatically after subscribe. Manual execute remains as fallback for demo control.
+            Reactive should execute chunks automatically after subscribe. Manual execute remains as fallback for demo
+            control.
           </p>
         </div>
       </section>
@@ -1020,17 +1231,42 @@ const Home: NextPage = () => {
       <section className="card bg-base-100 border border-base-300">
         <div className="card-body space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="card-title text-lg">Live Price (from swaps)</h2>
-            <span className="text-xs text-base-content/60">auto-updates from pool swap events</span>
+            <h2 className="card-title text-lg">Pool Price</h2>
+            <span className="text-xs text-base-content/60">chunks + swaps (auto-updates)</span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-base-content/60">Range</span>
-            <button className={`btn btn-xs ${windowSeconds === 300 ? "btn-primary" : "btn-outline"}`} onClick={() => setWindowSeconds(300)}>5m</button>
-            <button className={`btn btn-xs ${windowSeconds === 900 ? "btn-primary" : "btn-outline"}`} onClick={() => setWindowSeconds(900)}>15m</button>
-            <button className={`btn btn-xs ${windowSeconds === 3600 ? "btn-primary" : "btn-outline"}`} onClick={() => setWindowSeconds(3600)}>1h</button>
-            <button className={`btn btn-xs ${windowSeconds === 14400 ? "btn-primary" : "btn-outline"}`} onClick={() => setWindowSeconds(14400)}>4h</button>
-            <button className={`btn btn-xs ${windowSeconds === 0 ? "btn-primary" : "btn-outline"}`} onClick={() => setWindowSeconds(0)}>all</button>
+            <button
+              className={`btn btn-xs ${windowSeconds === 300 ? "btn-primary" : "btn-outline"}`}
+              onClick={() => setWindowSeconds(300)}
+            >
+              5m
+            </button>
+            <button
+              className={`btn btn-xs ${windowSeconds === 900 ? "btn-primary" : "btn-outline"}`}
+              onClick={() => setWindowSeconds(900)}
+            >
+              15m
+            </button>
+            <button
+              className={`btn btn-xs ${windowSeconds === 3600 ? "btn-primary" : "btn-outline"}`}
+              onClick={() => setWindowSeconds(3600)}
+            >
+              1h
+            </button>
+            <button
+              className={`btn btn-xs ${windowSeconds === 14400 ? "btn-primary" : "btn-outline"}`}
+              onClick={() => setWindowSeconds(14400)}
+            >
+              4h
+            </button>
+            <button
+              className={`btn btn-xs ${windowSeconds === 0 ? "btn-primary" : "btn-outline"}`}
+              onClick={() => setWindowSeconds(0)}
+            >
+              all
+            </button>
 
             <div className="ml-auto flex gap-1">
               <button
@@ -1049,7 +1285,7 @@ const Home: NextPage = () => {
           </div>
 
           {filteredChartPoints.length < 2 ? (
-            <p className="text-sm text-base-content/70">No swap observations in selected window.</p>
+            <p className="text-sm text-base-content/70">No chunk executions in selected window.</p>
           ) : (
             <div className="rounded-xl border border-base-300 bg-base-200 p-2 overflow-x-auto">
               <svg viewBox="0 0 640 220" className="w-full min-w-[640px] h-[220px]">
@@ -1059,16 +1295,30 @@ const Home: NextPage = () => {
                 <polyline fill="none" stroke="#02bbf0" strokeWidth="3" points={svgChart.exec} />
                 <polyline fill="none" stroke="#ff8f2e" strokeWidth="2" strokeDasharray="6 6" points={svgChart.trend} />
 
-                <text x="6" y="24" fontSize="10" fill="currentColor" opacity="0.7">{svgChart.yMax.toFixed(6)}</text>
-                <text x="6" y="192" fontSize="10" fill="currentColor" opacity="0.7">{svgChart.yMin.toFixed(6)}</text>
-                <text x="52" y="212" fontSize="10" fill="currentColor" opacity="0.7">{svgChart.xStart}</text>
-                <text x="560" y="212" fontSize="10" fill="currentColor" opacity="0.7">{svgChart.xEnd}</text>
+                <text x="6" y="24" fontSize="10" fill="currentColor" opacity="0.7">
+                  {svgChart.yMax.toFixed(6)}
+                </text>
+                <text x="6" y="192" fontSize="10" fill="currentColor" opacity="0.7">
+                  {svgChart.yMin.toFixed(6)}
+                </text>
+                <text x="52" y="212" fontSize="10" fill="currentColor" opacity="0.7">
+                  {svgChart.xStart}
+                </text>
+                <text x="560" y="212" fontSize="10" fill="currentColor" opacity="0.7">
+                  {svgChart.xEnd}
+                </text>
               </svg>
               <div className="mt-2 flex flex-wrap gap-4 text-xs">
-                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#02bbf0]" />Execution price (USDC per REACT)</span>
-                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[#ff8f2e]" />Trend price (EMA)</span>
-                <span className="text-base-content/70">X-axis: time</span>
-                <span className="text-base-content/70">Y-axis: price</span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-[#02bbf0]" />
+                  Price (USDC/REACT)
+                </span>
+                <span className="inline-flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-[#ff8f2e]" />
+                  Trend (EMA)
+                </span>
+                <span className="badge badge-xs badge-primary">chunk</span>
+                <span className="badge badge-xs badge-outline">swap</span>
               </div>
             </div>
           )}
@@ -1079,21 +1329,40 @@ const Home: NextPage = () => {
                 <tr>
                   <th>#</th>
                   <th>Time</th>
-                  <th>Execution Price</th>
-                  <th>Trend Price</th>
+                  <th>Price (USDC/REACT)</th>
+                  <th>Trend (EMA)</th>
+                  <th>In</th>
+                  <th>Out</th>
                   <th>Source</th>
                 </tr>
               </thead>
               <tbody>
-                {[...filteredChartPoints].slice(-8).reverse().map(point => (
-                  <tr key={point.index}>
-                    <td>{point.index}</td>
-                    <td>{new Date(point.ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
-                    <td>{point.execPrice.toFixed(6)}</td>
-                    <td>{point.trendPrice.toFixed(6)}</td>
-                    <td>Swap</td>
-                  </tr>
-                ))}
+                {[...filteredChartPoints]
+                  .slice(-8)
+                  .reverse()
+                  .map(point => (
+                    <tr key={`${point.source}-${point.index}`}>
+                      <td>{point.index}</td>
+                      <td>
+                        {new Date(point.ts * 1000).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </td>
+                      <td>{point.execPrice.toFixed(6)}</td>
+                      <td>{point.trendPrice.toFixed(6)}</td>
+                      <td className="text-xs">{point.chunkIn}</td>
+                      <td className="text-xs">{point.chunkOut}</td>
+                      <td>
+                        <span
+                          className={`badge badge-xs ${point.source === "chunk" ? "badge-primary" : "badge-outline"}`}
+                        >
+                          {point.source}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
