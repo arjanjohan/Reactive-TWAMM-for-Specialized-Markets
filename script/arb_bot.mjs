@@ -19,6 +19,7 @@ import {
   createWalletClient,
   decodeEventLog,
   defineChain,
+  fallback,
   formatUnits,
   http,
   parseUnits,
@@ -61,8 +62,26 @@ function loadEnvFile(filePath) {
 loadEnvFile(join(REPO_ROOT, ".env"));
 loadEnvFile(join(REPO_ROOT, ".env.addresses"));
 
+function parseRpcList(value, fallbackUrl) {
+  const urls = (value || "")
+    .split(",")
+    .map(url => url.trim())
+    .filter(Boolean);
+  return urls.length > 0 ? urls : [fallbackUrl];
+}
+
+function resolveRpcUrls() {
+  const explicitList = parseRpcList(process.env.UNICHAIN_RPCS);
+  if (explicitList.length > 0) return explicitList;
+
+  const fallbackUrls = [process.env.UNICHAIN_RPC, process.env.UNICHAIN_RPC_2]
+    .map(url => url?.trim())
+    .filter(Boolean);
+  return fallbackUrls.length > 0 ? fallbackUrls : ["https://sepolia.unichain.org"];
+}
+
 const CFG = {
-  rpcUrl: process.env.UNICHAIN_RPC || "https://sepolia.unichain.org",
+  rpcUrls: resolveRpcUrls(),
   botPk: process.env.BOT_PK || process.env.PRIVATE_KEY,
 
   twammHook: process.env.TWAMM_HOOK,
@@ -92,8 +111,8 @@ const CHAIN = defineChain({
   name: "Unichain Sepolia",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: {
-    default: { http: [CFG.rpcUrl] },
-    public: { http: [CFG.rpcUrl] },
+    default: { http: CFG.rpcUrls },
+    public: { http: CFG.rpcUrls },
   },
   blockExplorers: {
     default: { name: "Uniscan", url: "https://sepolia.uniscan.xyz" },
@@ -206,6 +225,11 @@ const swapExecAbi = [
     outputs: [{ name: "amountOut", type: "uint256" }],
   },
 ];
+
+function makeRpcTransport(urls) {
+  const transports = urls.map(url => http(url));
+  return transports.length === 1 ? transports[0] : fallback(transports);
+}
 
 const REACT_DEC = 18;
 const USDC_DEC = 6;
@@ -414,10 +438,12 @@ async function main() {
   if (!CFG.react) throw new Error("Missing REACT_TOKEN — run: node script/sync_addresses.mjs && source .env");
 
   const account = privateKeyToAccount(CFG.botPk.startsWith("0x") ? CFG.botPk : `0x${CFG.botPk}`);
-  const publicClient = createPublicClient({ chain: CHAIN, transport: http(CFG.rpcUrl) });
-  const walletClient = createWalletClient({ account, chain: CHAIN, transport: http(CFG.rpcUrl) });
+  const transport = makeRpcTransport(CFG.rpcUrls);
+  const publicClient = createPublicClient({ chain: CHAIN, transport });
+  const walletClient = createWalletClient({ account, chain: CHAIN, transport });
 
   console.log("[arb] bot address", account.address);
+  console.log("[arb] rpc urls", CFG.rpcUrls.join(", "));
   console.log("[arb] hook", CFG.twammHook);
   console.log("[arb] executor", CFG.swapExecutor);
 

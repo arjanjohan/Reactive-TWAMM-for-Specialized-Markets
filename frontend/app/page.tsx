@@ -262,7 +262,8 @@ const Home: NextPage = () => {
       trendPrice: number;
       chunkIn: string;
       chunkOut: string;
-      source: "chunk" | "swap";
+      source: "chunk" | "swap" | "live";
+      blockNumber: number;
     }[]
   >([]);
   const [livePoolPrice, setLivePoolPrice] = useState<number | null>(null);
@@ -310,10 +311,10 @@ const Home: NextPage = () => {
 
         const packed = BigInt(slot0 as `0x${string}`);
         const sqrtPriceX96 = packed & MASK_160;
-        const dec0 = poolKey.currency0.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
-        const dec1 = poolKey.currency1.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
+        const liveDec0 = poolKey.currency0.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
+        const liveDec1 = poolKey.currency1.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
         const rawToken1PerToken0 = (Number(sqrtPriceX96) / Q96) ** 2;
-        const humanToken1PerToken0 = rawToken1PerToken0 * 10 ** (dec0 - dec1);
+        const humanToken1PerToken0 = rawToken1PerToken0 * 10 ** (liveDec0 - liveDec1);
         const reactIsToken0 = poolKey.currency0.toLowerCase() === ADDRS.react.toLowerCase();
         const reactUsd = reactIsToken0 ? humanToken1PerToken0 : 1 / humanToken1PerToken0;
 
@@ -333,22 +334,30 @@ const Home: NextPage = () => {
           execPrice: number;
           chunkIn: string;
           chunkOut: string;
-          source: "chunk" | "swap";
+          source: "chunk" | "swap" | "live";
           blockNumber: number;
         };
         const rawPoints: RawPoint[] = [];
         const latestBlock = await publicClient.getBlockNumber();
+        const fromBlock = latestBlock > 20_000n ? latestBlock - 20_000n : 0n;
 
         // --- 1. ChunkExecuted events from hook ---
         const chunkEvent = parseAbiItem(
           "event ChunkExecuted(bytes32 indexed orderId, uint256 chunkIndex, uint256 amountIn, uint256 amountOut)",
         );
-        const chunkLogs = await publicClient.getLogs({
-          address: ADDRS.hook,
-          event: chunkEvent,
-          fromBlock: 0n,
-          toBlock: "latest",
-        });
+        let chunkLogs: any[] = [];
+        if (lastOrderId) {
+          try {
+            chunkLogs = await publicClient.getLogs({
+              address: ADDRS.hook,
+              event: chunkEvent,
+              fromBlock,
+              toBlock: "latest",
+            });
+          } catch {
+            chunkLogs = [];
+          }
+        }
 
         // Collect all block numbers for timestamp resolution
         const allBlockNums = new Set<number>();
@@ -357,13 +366,21 @@ const Home: NextPage = () => {
         });
 
         // --- 2. Swap events from PoolManager ---
-        const swapLogs = await publicClient.getLogs({
-          address: POOL_MANAGER,
-          event: swapEvent,
-          args: { id: poolId },
-          fromBlock: latestBlock > 200_000n ? latestBlock - 200_000n : 0n,
-          toBlock: "latest",
-        });
+        let swapLogs: any[] = [];
+        try {
+          const allSwapLogs = await publicClient.getLogs({
+            address: POOL_MANAGER,
+            event: swapEvent,
+            fromBlock,
+            toBlock: "latest",
+          });
+          swapLogs = allSwapLogs.filter(log => {
+            const topicPoolId = log.topics?.[1]?.toLowerCase();
+            return topicPoolId === poolId.toLowerCase();
+          });
+        } catch {
+          swapLogs = [];
+        }
         swapLogs.forEach(l => {
           if (l.blockNumber) allBlockNums.add(Number(l.blockNumber));
         });
@@ -452,24 +469,78 @@ const Home: NextPage = () => {
           });
         }
 
+        // Add a direct live pool snapshot so the chart still updates even if log polling is sparse.
+        const slot0 = await publicClient.readContract({
+          address: POOL_MANAGER,
+          abi: extsloadAbi,
+          functionName: "extsload",
+          args: [getPoolStateSlot()],
+        });
+        const packed = BigInt(slot0 as `0x${string}`);
+        const sqrtPriceX96 = packed & MASK_160;
+        const liveDec0 = poolKey.currency0.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
+        const liveDec1 = poolKey.currency1.toLowerCase() === ADDRS.usdc.toLowerCase() ? 6 : 18;
+        const rawToken1PerToken0 = (Number(sqrtPriceX96) / Q96) ** 2;
+        const humanToken1PerToken0 = rawToken1PerToken0 * 10 ** (liveDec0 - liveDec1);
+        const reactIsToken0 = poolKey.currency0.toLowerCase() === ADDRS.react.toLowerCase();
+        const liveReactUsd = reactIsToken0 ? humanToken1PerToken0 : 1 / humanToken1PerToken0;
+        if (Number.isFinite(liveReactUsd) && liveReactUsd > 0) {
+          rawPoints.push({
+            ts: Math.floor(Date.now() / 1000),
+            execPrice: liveReactUsd,
+            chunkIn: "-",
+            chunkOut: "-",
+            source: "live",
+            blockNumber: Number(latestBlock),
+          });
+        }
+
         // Sort by block number then compute EMA
         rawPoints.sort((a, b) => a.blockNumber - b.blockNumber || a.ts - b.ts);
 
-        let ema = 0;
-        const points = rawPoints.map((p, idx) => {
-          ema = idx === 0 ? p.execPrice : ema * 0.6 + p.execPrice * 0.4;
-          return {
-            index: idx + 1,
-            ts: p.ts,
-            execPrice: p.execPrice,
-            trendPrice: ema,
-            chunkIn: p.chunkIn,
-            chunkOut: p.chunkOut,
-            source: p.source,
-          };
-        });
+        if (!cancelled) {
+          setChartPoints(prev => {
+            const carryLive = prev
+              .filter(p => p.source === "live")
+              .slice(-60)
+              .map(p => ({
+                ts: p.ts,
+                execPrice: p.execPrice,
+                chunkIn: p.chunkIn,
+                chunkOut: p.chunkOut,
+                source: p.source,
+                blockNumber: p.blockNumber,
+              }));
 
-        if (!cancelled) setChartPoints(points);
+            const deduped = new Map<string, (typeof carryLive)[number]>();
+            for (const point of [...carryLive, ...rawPoints]) {
+              const key =
+                point.source === "live"
+                  ? `${point.source}-${point.ts}`
+                  : `${point.source}-${point.blockNumber}-${point.ts}`;
+              deduped.set(key, point);
+            }
+
+            const merged = [...deduped.values()]
+              .sort((a, b) => a.blockNumber - b.blockNumber || a.ts - b.ts)
+              .slice(-200);
+
+            let ema = 0;
+            return merged.map((p, idx) => {
+              ema = idx === 0 ? p.execPrice : ema * 0.6 + p.execPrice * 0.4;
+              return {
+                index: idx + 1,
+                ts: p.ts,
+                execPrice: p.execPrice,
+                trendPrice: ema,
+                chunkIn: p.chunkIn,
+                chunkOut: p.chunkOut,
+                source: p.source,
+                blockNumber: p.blockNumber,
+              };
+            });
+          });
+        }
       } catch {
         if (!cancelled) setChartPoints([]);
       }
@@ -484,7 +555,7 @@ const Home: NextPage = () => {
       clearInterval(priceId);
       clearInterval(id);
     };
-  }, [publicClient, poolId, poolKey]);
+  }, [lastOrderId, publicClient, poolId, poolKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -917,7 +988,7 @@ const Home: NextPage = () => {
   };
 
   return (
-    <main className="mx-auto max-w-xl px-4 py-10 space-y-5">
+    <main className="mx-auto max-w-5xl px-4 py-10 space-y-5">
       <div className="flex justify-center">
         <Image src="/logo.png" alt="Reactive TWAMM" width={400} height={400} priority />
       </div>
@@ -1285,7 +1356,7 @@ const Home: NextPage = () => {
           </div>
 
           {filteredChartPoints.length < 2 ? (
-            <p className="text-sm text-base-content/70">No chunk executions in selected window.</p>
+            <p className="text-sm text-base-content/70">No price observations in selected window.</p>
           ) : (
             <div className="rounded-xl border border-base-300 bg-base-200 p-2 overflow-x-auto">
               <svg viewBox="0 0 640 220" className="w-full min-w-[640px] h-[220px]">
@@ -1319,6 +1390,7 @@ const Home: NextPage = () => {
                 </span>
                 <span className="badge badge-xs badge-primary">chunk</span>
                 <span className="badge badge-xs badge-outline">swap</span>
+                <span className="badge badge-xs">live</span>
               </div>
             </div>
           )}
@@ -1356,7 +1428,7 @@ const Home: NextPage = () => {
                       <td className="text-xs">{point.chunkOut}</td>
                       <td>
                         <span
-                          className={`badge badge-xs ${point.source === "chunk" ? "badge-primary" : "badge-outline"}`}
+                          className={`badge badge-xs ${point.source === "chunk" ? "badge-primary" : point.source === "swap" ? "badge-outline" : ""}`}
                         >
                           {point.source}
                         </span>

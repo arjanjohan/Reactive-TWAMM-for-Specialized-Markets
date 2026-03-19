@@ -11,9 +11,9 @@
  * Useful env vars:
  *   ARB_ALWAYS_POLL_SECONDS=20
  *   ARB_ALWAYS_MAX_DEV_PCT=0.50
- *   ARB_ALWAYS_SWAP_USDC=3
- *   ARB_ALWAYS_SWAP_REACT=3
- *   ARB_ALWAYS_MICRO_SWAPS=2
+ *   ARB_ALWAYS_CLOSE_GAP_PCT=20
+ *   ARB_ALWAYS_MAX_SWAP_USDC=1000
+ *   ARB_ALWAYS_MAX_SWAP_REACT=50000
  *   ARB_ALWAYS_CYCLE_SECONDS=20
  *   ARB_ALWAYS_DRY_RUN=true
  */
@@ -24,6 +24,7 @@ import {
   createWalletClient,
   defineChain,
   encodeAbiParameters,
+  fallback,
   formatUnits,
   http,
   keccak256,
@@ -67,8 +68,26 @@ function loadEnvFile(filePath) {
 loadEnvFile(join(REPO_ROOT, ".env"));
 loadEnvFile(join(REPO_ROOT, ".env.addresses"));
 
+function parseRpcList(value, fallbackUrl) {
+  const urls = (value || "")
+    .split(",")
+    .map(url => url.trim())
+    .filter(Boolean);
+  return urls.length > 0 ? urls : [fallbackUrl];
+}
+
+function resolveRpcUrls() {
+  const explicitList = parseRpcList(process.env.UNICHAIN_RPCS);
+  if (explicitList.length > 0) return explicitList;
+
+  const fallbackUrls = [process.env.UNICHAIN_RPC, process.env.UNICHAIN_RPC_2]
+    .map(url => url?.trim())
+    .filter(Boolean);
+  return fallbackUrls.length > 0 ? fallbackUrls : ["https://sepolia.unichain.org"];
+}
+
 const CFG = {
-  rpcUrl: process.env.UNICHAIN_RPC || "https://sepolia.unichain.org",
+  rpcUrls: resolveRpcUrls(),
   poolManager: process.env.UNICHAIN_POOL_MANAGER || "0x00B036B58a818B1BC34d502D3fE730Db729e62AC",
   botPk: process.env.BOT_PK || process.env.PRIVATE_KEY,
 
@@ -83,10 +102,13 @@ const CFG = {
 
   pollSeconds: Number(process.env.ARB_ALWAYS_POLL_SECONDS || "20"),
   maxDeviationPct: Number(process.env.ARB_ALWAYS_MAX_DEV_PCT || process.env.ARB_MAX_DEV_PCT || "0.50"),
+  closeGapPct: Number(process.env.ARB_ALWAYS_CLOSE_GAP_PCT || "20"),
   microSwaps: Number(process.env.ARB_ALWAYS_MICRO_SWAPS || "2"),
   cycleSeconds: Number(process.env.ARB_ALWAYS_CYCLE_SECONDS || "20"),
-  swapUsdcAmount: process.env.ARB_ALWAYS_SWAP_USDC || "3",
-  swapReactAmount: process.env.ARB_ALWAYS_SWAP_REACT || "3",
+  swapUsdcAmount: process.env.ARB_ALWAYS_SWAP_USDC || "100",
+  swapReactAmount: process.env.ARB_ALWAYS_SWAP_REACT || "100",
+  maxSwapUsdcAmount: process.env.ARB_ALWAYS_MAX_SWAP_USDC || "1000",
+  maxSwapReactAmount: process.env.ARB_ALWAYS_MAX_SWAP_REACT || "50000",
   mintBufferPct: Number(process.env.ARB_MINT_BUFFER_PCT || "15"),
   dryRun: (process.env.ARB_ALWAYS_DRY_RUN || "false").toLowerCase() === "true",
 };
@@ -96,8 +118,8 @@ const CHAIN = defineChain({
   name: "Unichain Sepolia",
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: {
-    default: { http: [CFG.rpcUrl] },
-    public: { http: [CFG.rpcUrl] },
+    default: { http: CFG.rpcUrls },
+    public: { http: CFG.rpcUrls },
   },
   blockExplorers: {
     default: { name: "Uniscan", url: "https://sepolia.uniscan.xyz" },
@@ -184,10 +206,17 @@ const extsloadAbi = [
 const REACT_DEC = 18;
 const USDC_DEC = 6;
 const MAX_UINT = 2n ** 256n - 1n;
+const Q96_BI = 2n ** 96n;
 const MASK_160 = (1n << 160n) - 1n;
 const MASK_24 = (1n << 24n) - 1n;
 const Q96 = 2 ** 96;
+
+function makeRpcTransport(urls) {
+  const transports = urls.map(url => http(url));
+  return transports.length === 1 ? transports[0] : fallback(transports);
+}
 const POOLS_SLOT = 6n;
+const LIQUIDITY_OFFSET = 3n;
 const MIN_SQRT_PRICE_LIMIT_X96 = 4295128740n;
 const MAX_SQRT_PRICE_LIMIT_X96 = 340282366920938463463374607431768211455n;
 
@@ -235,6 +264,10 @@ function getPoolStateSlot(poolId) {
   return keccak256(concatHex([poolId, toHex(POOLS_SLOT, { size: 32 })]));
 }
 
+function getPoolLiquiditySlot(poolId) {
+  return toHex(BigInt(getPoolStateSlot(poolId)) + LIQUIDITY_OFFSET, { size: 32 });
+}
+
 function decodeSlot0(packedHex) {
   const packed = BigInt(packedHex);
   return {
@@ -264,18 +297,27 @@ async function fetchReactUsd() {
 async function readPoolReactUsd(publicClient) {
   const key = getPoolKey();
   const poolId = getPoolId(key);
-  const slot0 = await publicClient.readContract({
-    address: CFG.poolManager,
-    abi: extsloadAbi,
-    functionName: "extsload",
-    args: [getPoolStateSlot(poolId)],
-  });
+  const [slot0, liquidityHex] = await Promise.all([
+    publicClient.readContract({
+      address: CFG.poolManager,
+      abi: extsloadAbi,
+      functionName: "extsload",
+      args: [getPoolStateSlot(poolId)],
+    }),
+    publicClient.readContract({
+      address: CFG.poolManager,
+      abi: extsloadAbi,
+      functionName: "extsload",
+      args: [getPoolLiquiditySlot(poolId)],
+    }),
+  ]);
 
   const { sqrtPriceX96, tick, lpFee, protocolFee } = decodeSlot0(slot0);
   const dec0 = getDecimals(key.currency0);
   const dec1 = getDecimals(key.currency1);
   const rawToken1PerToken0 = (Number(sqrtPriceX96) / Q96) ** 2;
   const humanToken1PerToken0 = rawToken1PerToken0 * 10 ** (dec0 - dec1);
+  const liquidity = BigInt(liquidityHex);
 
   const reactIsToken0 = norm(key.currency0) === norm(CFG.react);
   const reactUsd = reactIsToken0 ? humanToken1PerToken0 : 1 / humanToken1PerToken0;
@@ -284,16 +326,81 @@ async function readPoolReactUsd(publicClient) {
     throw new Error(`invalid pool price derived from slot0=${slot0}`);
   }
 
-  return { reactUsd, tick, lpFee, protocolFee };
+  return { reactUsd, tick, lpFee, protocolFee, liquidity, sqrtPriceX96, dec0, dec1, reactIsToken0, key };
+}
+
+function ceilDiv(a, b) {
+  return (a + b - 1n) / b;
+}
+
+function priceToRawToken1PerToken0({ reactUsd, reactIsToken0, dec0, dec1 }) {
+  const humanToken1PerToken0 = reactIsToken0 ? reactUsd : 1 / reactUsd;
+  return humanToken1PerToken0 / 10 ** (dec0 - dec1);
+}
+
+function sqrtPriceX96FromReactUsd({ reactUsd, reactIsToken0, dec0, dec1 }) {
+  const rawToken1PerToken0 = priceToRawToken1PerToken0({ reactUsd, reactIsToken0, dec0, dec1 });
+  if (!Number.isFinite(rawToken1PerToken0) || rawToken1PerToken0 <= 0) {
+    throw new Error(`invalid target raw price ${rawToken1PerToken0}`);
+  }
+  return BigInt(Math.floor(Math.sqrt(rawToken1PerToken0) * Q96));
+}
+
+function estimateAmountInForTarget({ pool, tokenIn, targetReactUsd }) {
+  const targetSqrtPriceX96 = sqrtPriceX96FromReactUsd({
+    reactUsd: targetReactUsd,
+    reactIsToken0: pool.reactIsToken0,
+    dec0: pool.dec0,
+    dec1: pool.dec1,
+  });
+  const currentSqrtPriceX96 = pool.sqrtPriceX96;
+  const zeroForOne = norm(tokenIn) === norm(pool.key.currency0);
+
+  if (zeroForOne) {
+    if (targetSqrtPriceX96 >= currentSqrtPriceX96) return 0n;
+    const numerator = pool.liquidity * (currentSqrtPriceX96 - targetSqrtPriceX96) * Q96_BI;
+    const denominator = currentSqrtPriceX96 * targetSqrtPriceX96;
+    return denominator > 0n ? ceilDiv(numerator, denominator) : 0n;
+  }
+
+  if (targetSqrtPriceX96 <= currentSqrtPriceX96) return 0n;
+  return ceilDiv(pool.liquidity * (targetSqrtPriceX96 - currentSqrtPriceX96), Q96_BI);
+}
+
+function computeDynamicTrade({ pool, marketReactUsd }) {
+  const closeFrac = Math.min(1, Math.max(0.01, CFG.closeGapPct / 100));
+  const targetReactUsd = pool.reactUsd + (marketReactUsd - pool.reactUsd) * closeFrac;
+  const buyReact = pool.reactUsd < marketReactUsd;
+  const tokenIn = buyReact ? CFG.usdc : CFG.react;
+  const decimals = buyReact ? USDC_DEC : REACT_DEC;
+  const fallbackHumanAmount = buyReact ? CFG.swapUsdcAmount : CFG.swapReactAmount;
+  const maxHumanAmount = buyReact ? CFG.maxSwapUsdcAmount : CFG.maxSwapReactAmount;
+  const maxRawAmount = parseUnits(maxHumanAmount, decimals);
+  const fallbackRawAmount = parseUnits(fallbackHumanAmount, decimals);
+  const estimatedRawAmount = estimateAmountInForTarget({ pool, tokenIn, targetReactUsd });
+  const totalRawAmount =
+    estimatedRawAmount > 0n ? (estimatedRawAmount > maxRawAmount ? maxRawAmount : estimatedRawAmount) : fallbackRawAmount;
+
+  return {
+    buyReact,
+    targetReactUsd,
+    totalRawAmount,
+    totalHumanAmount: formatUnits(totalRawAmount, decimals),
+    maxHumanAmount,
+    usedFallback: estimatedRawAmount <= 0n,
+  };
 }
 
 async function ensureAllowanceAndBalance({ publicClient, walletClient, account, token, decimals, required }) {
-  const balance = await publicClient.readContract({
-    address: token,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: [account.address],
-  });
+  const readBalance = () =>
+    publicClient.readContract({
+      address: token,
+      abi: erc20Abi,
+      functionName: "balanceOf",
+      args: [account.address],
+    });
+
+  let balance = await readBalance();
 
   if (balance < required) {
     const deficit = required - balance;
@@ -308,6 +415,13 @@ async function ensureAllowanceAndBalance({ publicClient, walletClient, account, 
       args: [account.address, topUp],
     });
     await publicClient.waitForTransactionReceipt({ hash });
+
+    // Some RPC backends lag briefly after the mint receipt; poll until the new balance is visible.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      balance = await readBalance();
+      if (balance >= required) break;
+      await sleep(500);
+    }
   }
 
   const allowance = await publicClient.readContract({
@@ -331,13 +445,20 @@ async function ensureAllowanceAndBalance({ publicClient, walletClient, account, 
   }
 }
 
-async function doMicroSwapCycle({ publicClient, walletClient, account, buyReact, reason }) {
+async function doMicroSwapCycle({
+  publicClient,
+  walletClient,
+  account,
+  buyReact,
+  reason,
+  totalRawAmount,
+  totalHumanAmount,
+}) {
   const key = getPoolKey();
   const tokenIn = buyReact ? CFG.usdc : CFG.react;
   const decimals = buyReact ? USDC_DEC : REACT_DEC;
-  const totalHumanAmount = buyReact ? CFG.swapUsdcAmount : CFG.swapReactAmount;
-  const total = parseUnits(totalHumanAmount, decimals);
-  const count = Math.max(1, CFG.microSwaps);
+  const total = totalRawAmount;
+  const count = 1;
   const per = total / BigInt(count);
   const waitMs = Math.max(1500, Math.floor((CFG.cycleSeconds * 1000) / count));
 
@@ -365,14 +486,42 @@ async function doMicroSwapCycle({ publicClient, walletClient, account, buyReact,
 
     const sqrtPriceLimitX96 = getSwapPriceLimit(tokenIn);
 
-    const hash = await walletClient.writeContract({
-      account,
-      chain: CHAIN,
-      address: CFG.swapExecutor,
-      abi: swapExecAbi,
-      functionName: "swapExactIn",
-      args: [key, tokenIn, amountIn, 0n, sqrtPriceLimitX96],
-    });
+    let hash;
+    try {
+      hash = await walletClient.writeContract({
+        account,
+        chain: CHAIN,
+        address: CFG.swapExecutor,
+        abi: swapExecAbi,
+        functionName: "swapExactIn",
+        args: [key, tokenIn, amountIn, 0n, sqrtPriceLimitX96],
+      });
+    } catch (err) {
+      const msg = err?.shortMessage || err?.message || String(err);
+      if (msg.includes("ERC20InsufficientBalance") || msg.includes("0xe450d38c")) {
+        console.log("[always-arb] balance race after mint detected, refreshing balance and retrying once");
+        await ensureAllowanceAndBalance({
+          publicClient,
+          walletClient,
+          account,
+          token: tokenIn,
+          decimals,
+          required: amountIn,
+        });
+        await sleep(750);
+        hash = await walletClient.writeContract({
+          account,
+          chain: CHAIN,
+          address: CFG.swapExecutor,
+          abi: swapExecAbi,
+          functionName: "swapExactIn",
+          args: [key, tokenIn, amountIn, 0n, sqrtPriceLimitX96],
+        });
+      } else {
+        throw err;
+      }
+    }
+
     await publicClient.waitForTransactionReceipt({ hash });
 
     console.log(`[always-arb] swap ${i + 1}/${count} tx=${hash}`);
@@ -405,8 +554,21 @@ async function tickOnce({ publicClient, walletClient, account }) {
   }
 
   const buyReact = pool.reactUsd < marketReactUsd;
-  const reason = `dev ${deviationPct.toFixed(3)}% vs threshold ${CFG.maxDeviationPct}%`;
-  await doMicroSwapCycle({ publicClient, walletClient, account, buyReact, reason });
+  const sizing = computeDynamicTrade({ pool, marketReactUsd });
+  const fallbackNote = sizing.usedFallback ? ` fallback=${buyReact ? CFG.swapUsdcAmount : CFG.swapReactAmount}` : "";
+  const reason =
+    `dev ${deviationPct.toFixed(3)}% vs threshold ${CFG.maxDeviationPct}%` +
+    ` target=${sizing.targetReactUsd.toFixed(6)} close=${CFG.closeGapPct}% cap=${sizing.maxHumanAmount}${buyReact ? " USDC" : " REACT"}` +
+    fallbackNote;
+  await doMicroSwapCycle({
+    publicClient,
+    walletClient,
+    account,
+    buyReact,
+    reason,
+    totalRawAmount: sizing.totalRawAmount,
+    totalHumanAmount: sizing.totalHumanAmount,
+  });
 }
 
 async function main() {
@@ -418,15 +580,18 @@ async function main() {
   if (!CFG.react) throw new Error("Missing REACT_TOKEN");
 
   const account = privateKeyToAccount(CFG.botPk.startsWith("0x") ? CFG.botPk : `0x${CFG.botPk}`);
-  const publicClient = createPublicClient({ chain: CHAIN, transport: http(CFG.rpcUrl) });
-  const walletClient = createWalletClient({ account, chain: CHAIN, transport: http(CFG.rpcUrl) });
+  const transport = makeRpcTransport(CFG.rpcUrls);
+  const publicClient = createPublicClient({ chain: CHAIN, transport });
+  const walletClient = createWalletClient({ account, chain: CHAIN, transport });
 
   console.log("[always-arb] bot address", account.address);
+  console.log("[always-arb] rpc urls", CFG.rpcUrls.join(", "));
   console.log("[always-arb] pool manager", CFG.poolManager);
   console.log("[always-arb] hook", CFG.twammHook);
   console.log("[always-arb] executor", CFG.swapExecutor);
   console.log("[always-arb] poll seconds", CFG.pollSeconds);
   console.log("[always-arb] threshold %", CFG.maxDeviationPct);
+  console.log("[always-arb] close gap %", CFG.closeGapPct);
   console.log("[always-arb] dry run", CFG.dryRun);
 
   let stopping = false;

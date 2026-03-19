@@ -206,8 +206,9 @@ This regenerates `.env.addresses`, `frontend/app/addresses.ts`, and `frontend/co
 ### Step 3: Setup demo environment (tokens + pool + liquidity)
 
 Deploys fresh USDC/REACT demo tokens, creates a Uniswap v4 pool with the hook, and adds full-range liquidity.
-The default pool initialization price is now a realistic REACT/USD starting point instead of the old raw `1:1` setup.
+The default pool initialization price is now a realistic REACT/USD starting point instead of the old raw `1:1` setup, and the setup script automatically flips the default `sqrtPriceX96` if token ordering changes.
 Override it with `DEMO_SQRT_PRICE_X96` if you want a different starting price.
+Override `DEMO_LIQUIDITY_DELTA` if you want deeper or shallower demo liquidity. The default is now tuned so a `1000 USDC` swap moves price by a few percent rather than barely moving it.
 
 ```bash
 forge script script/SetupDemoEnvironment.s.sol \

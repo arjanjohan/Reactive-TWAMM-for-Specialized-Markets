@@ -1,5 +1,21 @@
 import { type Chain, defineChain } from "viem";
 
+const parseRpcList = (value?: string) =>
+  (value || "")
+    .split(",")
+    .map(url => url.trim())
+    .filter(Boolean);
+
+const unichainRpcUrls = (() => {
+  const explicitList = parseRpcList(process.env.NEXT_PUBLIC_UNICHAIN_RPCS);
+  if (explicitList.length > 0) return explicitList;
+
+  return [process.env.NEXT_PUBLIC_UNICHAIN_RPC, process.env.NEXT_PUBLIC_UNICHAIN_RPC_2].filter(
+    (url): url is string => Boolean(url && url.trim()),
+  );
+})();
+const resolvedUnichainRpcUrls = unichainRpcUrls.length > 0 ? unichainRpcUrls : ["https://sepolia.unichain.org"];
+
 const unichainSepolia = defineChain({
   id: 1301,
   name: "Unichain Sepolia",
@@ -9,8 +25,8 @@ const unichainSepolia = defineChain({
     symbol: "ETH",
   },
   rpcUrls: {
-    default: { http: ["https://sepolia.unichain.org"] },
-    public: { http: ["https://sepolia.unichain.org"] },
+    default: { http: resolvedUnichainRpcUrls },
+    public: { http: resolvedUnichainRpcUrls },
   },
   blockExplorers: {
     default: {
@@ -25,7 +41,7 @@ export type BaseConfig = {
   targetNetworks: readonly Chain[];
   pollingInterval: number;
   alchemyApiKey: string;
-  rpcOverrides?: Record<number, string>;
+  rpcOverrides?: Record<number, string | string[]>;
   walletConnectProjectId: string;
   burnerWalletMode: "localNetworksOnly" | "allNetworks" | "disabled";
 };
@@ -47,7 +63,7 @@ const scaffoldConfig = {
   // If you want to use a different RPC for a specific network, you can add it here.
   // The key is the chain ID, and the value is the HTTP RPC URL
   rpcOverrides: {
-    [1301]: process.env.NEXT_PUBLIC_UNICHAIN_RPC || "https://sepolia.unichain.org",
+    [1301]: resolvedUnichainRpcUrls,
   },
   // This is ours WalletConnect's default project ID.
   // You can get your own at https://cloud.walletconnect.com

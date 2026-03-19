@@ -31,9 +31,10 @@ export const wagmiConfig = createConfig({
   client: ({ chain }) => {
     const mainnetFallbackWithDefaultRPC = [http("https://mainnet.rpc.buidlguidl.com")];
     let rpcFallbacks = [...(chain.id === mainnet.id ? mainnetFallbackWithDefaultRPC : []), http()];
-    const rpcOverrideUrl = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
-    if (rpcOverrideUrl) {
-      rpcFallbacks = [http(rpcOverrideUrl), ...rpcFallbacks];
+    const rpcOverride = (scaffoldConfig.rpcOverrides as ScaffoldConfig["rpcOverrides"])?.[chain.id];
+    const rpcOverrideUrls = Array.isArray(rpcOverride) ? rpcOverride : rpcOverride ? [rpcOverride] : [];
+    if (rpcOverrideUrls.length > 0) {
+      rpcFallbacks = [...rpcOverrideUrls.map(url => http(url)), ...rpcFallbacks];
     } else {
       const alchemyHttpUrl = getAlchemyHttpUrl(chain.id);
       if (alchemyHttpUrl) {
