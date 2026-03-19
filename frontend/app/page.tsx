@@ -51,6 +51,7 @@ const DURATION_MULTIPLIER: Record<DurationUnit, number> = {
 
 const MIN_CHUNK_DURATION_SECONDS = 60;
 const MAX_CHUNKS = 100;
+const SLIPPAGE_OPTIONS = ["0.5", "1", "2", "5", "10"] as const;
 const POOLS_SLOT = 6n;
 const Q96 = 2 ** 96;
 const MASK_160 = (1n << 160n) - 1n;
@@ -113,7 +114,7 @@ const Home: NextPage = () => {
   const [amountIn, setAmountIn] = useState("1000");
   const [durationValue, setDurationValue] = useState("30");
   const [durationUnit, setDurationUnit] = useState<DurationUnit>("minutes");
-  const [minOutputPerChunk, setMinOutputPerChunk] = useState("0");
+  const [slippagePct, setSlippagePct] = useState<(typeof SLIPPAGE_OPTIONS)[number]>("5");
   const [lastOrderId, setLastOrderId] = useState<`0x${string}` | null>(null);
   const [flowStatus, setFlowStatus] = useState<string>("Idle");
   const [windowSeconds, setWindowSeconds] = useState<number>(3600); // default 1h
@@ -294,6 +295,14 @@ const Home: NextPage = () => {
     if (!Number.isFinite(totalOut) || totalOut <= 0 || chunkCount === 0) return estimatedTotalOut === "—" ? "—" : "0";
     return (totalOut / chunkCount).toLocaleString(undefined, { maximumFractionDigits: 6 });
   }, [chunkCount, estimatedTotalOut]);
+
+  const displayedMinOutputPerChunk = useMemo(() => {
+    if (estimatedPerChunkOut === "—") return "—";
+    const perChunk = Number(estimatedPerChunkOut.replaceAll(",", ""));
+    const slip = Number(slippagePct);
+    if (!Number.isFinite(perChunk) || perChunk <= 0 || !Number.isFinite(slip)) return "0";
+    return (perChunk * (1 - slip / 100)).toLocaleString(undefined, { maximumFractionDigits: 6 });
+  }, [estimatedPerChunkOut, slippagePct]);
 
   useEffect(() => {
     let cancelled = false;
@@ -800,7 +809,7 @@ const Home: NextPage = () => {
   const submitOrder = async () => {
     try {
       setFlowStatus("Submitting order...");
-      const minOutBase = parseUnits(minOutputPerChunk || "0", tokenOut.decimals);
+      const minOutBase = 0n;
       const submitHash = await writeTwamm({
         functionName: "submitTWAMMOrder",
         args: [poolKey, amountInBase, BigInt(durationSeconds), tokenIn.address as `0x${string}`, tokenOut.address as `0x${string}`, minOutBase],
@@ -1152,11 +1161,12 @@ const Home: NextPage = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <label className="form-control col-span-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[7rem_7rem_7rem_minmax(0,1fr)] sm:items-end">
+            <label className="form-control">
               <span className="label-text text-xs">Duration</span>
               <input
-                className="input input-bordered"
+                className="input input-bordered input-sm w-full"
+                inputMode="numeric"
                 value={durationValue}
                 onChange={e => setDurationValue(e.target.value)}
               />
@@ -1164,7 +1174,7 @@ const Home: NextPage = () => {
             <label className="form-control">
               <span className="label-text text-xs">Unit</span>
               <select
-                className="select select-bordered"
+                className="select select-bordered select-sm w-full"
                 value={durationUnit}
                 onChange={e => setDurationUnit(e.target.value as DurationUnit)}
               >
@@ -1173,16 +1183,32 @@ const Home: NextPage = () => {
                 <option value="days">day</option>
               </select>
             </label>
+            <label className="form-control">
+              <span className="label-text text-xs">Slippage</span>
+              <select
+                className="select select-bordered select-sm w-full"
+                value={slippagePct}
+                onChange={e => setSlippagePct(e.target.value as (typeof SLIPPAGE_OPTIONS)[number])}
+              >
+                {SLIPPAGE_OPTIONS.map(option => (
+                  <option key={option} value={option}>
+                    {option}%
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="form-control">
+              <span className="label-text text-xs">Min output / chunk ({tokenOut.symbol})</span>
+              <div className="input input-bordered input-sm w-full flex items-center text-sm">
+                {displayedMinOutputPerChunk}
+              </div>
+            </label>
           </div>
 
-          <label className="form-control">
-            <span className="label-text text-xs">Min output per chunk ({tokenOut.symbol})</span>
-            <input
-              className="input input-bordered"
-              value={minOutputPerChunk}
-              onChange={e => setMinOutputPerChunk(e.target.value)}
-            />
-          </label>
+          <p className="text-xs text-base-content/60">
+            Slippage only affects this preview. For demo safety, orders still submit with min output per chunk set to
+            `0`.
+          </p>
 
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div className="rounded-lg bg-base-200 p-2 border border-base-300">
@@ -1202,13 +1228,13 @@ const Home: NextPage = () => {
               <p className="font-semibold">~{estimatedPerChunkOut}</p>
             </div>
           </div>
-
+{/*
           <div className="rounded-lg bg-base-200 p-2 border border-base-300 text-xs">
             <p className="text-base-content/70">Latest pool price</p>
             <p className="font-semibold">
               {displayPrice ? `${displayPrice.toFixed(6)} USDC per REACT` : "Waiting for pool state..."}
             </p>
-          </div>
+          </div> */}
 
           <div className="flex gap-2">
             <button className="btn btn-outline btn-sm flex-1" onClick={() => mintDemo("USDC")}>
